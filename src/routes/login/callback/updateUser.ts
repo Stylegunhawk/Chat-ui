@@ -19,12 +19,13 @@ import { logger } from "$lib/server/logger";
 export async function updateUser(params: {
 	userData: UserinfoResponse;
 	token: TokenSet;
+	issuer?: string;
 	locals: App.Locals;
 	cookies: Cookies;
 	userAgent?: string;
 	ip?: string;
 }) {
-	const { userData, token, locals, cookies, userAgent, ip } = params;
+	const { userData, token, issuer, locals, cookies, userAgent, ip } = params;
 
 	// Microsoft Entra v1 tokens do not provide preferred_username, instead the username is provided in the upn
 	// claim. See https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference
@@ -37,7 +38,7 @@ export async function updateUser(params: {
 		name,
 		email,
 		picture: avatarUrl,
-		sub: hfUserId,
+		sub: oidcSub,
 		orgs,
 	} = z
 		.object({
@@ -81,6 +82,14 @@ export async function updateUser(params: {
 		}>;
 	} & Record<string, string>;
 
+	// Namespace the provider subject by issuer when we are not using HF as the provider,
+	// to avoid collisions across providers (e.g. Google vs Hugging Face).
+	const effectiveIssuer = issuer || OIDConfig.PROVIDER_URL;
+	const isHfProvider =
+		/huggingface\.co/i.test(effectiveIssuer) || /huggingface\.co/i.test(OIDConfig.PROVIDER_URL);
+	const userKey = isHfProvider ? oidcSub : `${effectiveIssuer}::${oidcSub}`;
+	const legacyUserKey = oidcSub; // backward-compat lookup key
+
 	// Dynamically access user data based on NAME_CLAIM from environment
 	// This approach allows us to adapt to different OIDC providers flexibly.
 
@@ -90,6 +99,7 @@ export async function updateUser(params: {
 			login_name: name,
 			login_email: email,
 			login_orgs: orgs?.map((el) => el.sub),
+			login_issuer: effectiveIssuer,
 		},
 		"user login"
 	);
@@ -104,13 +114,15 @@ export async function updateUser(params: {
 		{
 			isAdmin,
 			isEarlyAccess,
-			hfUserId,
+			hfUserId: userKey,
 		},
-		`Updating user ${hfUserId}`
+		`Updating user ${userKey}`
 	);
 
 	// check if user already exists
-	const existingUser = await collections.users.findOne({ hfUserId });
+	const existingUser = await collections.users.findOne({
+		hfUserId: { $in: [userKey, legacyUserKey] },
+	});
 	let userId = existingUser?._id;
 
 	// update session cookie on login
@@ -134,7 +146,19 @@ export async function updateUser(params: {
 		// update existing user if any
 		await collections.users.updateOne(
 			{ _id: existingUser._id },
-			{ $set: { username, name, avatarUrl, isAdmin, isEarlyAccess } }
+			{
+				$set: {
+					username,
+					name,
+					avatarUrl,
+					isAdmin,
+					isEarlyAccess,
+					oidcIssuer: effectiveIssuer,
+					oidcSub,
+					// normalize the key if this user was previously created with the legacy (non-namespaced) key
+					hfUserId: existingUser.hfUserId === legacyUserKey ? userKey : existingUser.hfUserId,
+				},
+			}
 		);
 
 		// remove previous session if it exists and add new one
@@ -161,7 +185,9 @@ export async function updateUser(params: {
 			name,
 			email,
 			avatarUrl,
-			hfUserId,
+			hfUserId: userKey,
+			oidcIssuer: effectiveIssuer,
+			oidcSub,
 			isAdmin,
 			isEarlyAccess,
 		});

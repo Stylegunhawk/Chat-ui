@@ -2,22 +2,22 @@
 export function isValidUrl(urlString: string): boolean {
 	try {
 		const url = new URL(urlString.trim());
-		// Only allow HTTPS protocol
-		if (url.protocol !== "https:") {
-			return false;
-		}
-		// Prevent localhost/private IPs (basic check)
 		const hostname = url.hostname.toLowerCase();
-		if (
-			hostname === "localhost" ||
-			hostname.startsWith("127.") ||
-			hostname.startsWith("192.168.") ||
-			hostname.startsWith("172.16.") ||
-			hostname === "[::1]" ||
-			hostname === "0.0.0.0"
-		) {
+
+		// For security, require HTTPS for remote hosts, but allow HTTP for local
+		// development (localhost / loopback only).
+		const isLocalHost =
+			hostname === "localhost" || hostname === "[::1]" || hostname.startsWith("127.");
+
+		if (!isLocalHost && url.protocol !== "https:") {
 			return false;
 		}
+
+		// Still reject obvious non-routable or wildcard hosts
+		if (hostname === "0.0.0.0") {
+			return false;
+		}
+
 		return true;
 	} catch {
 		return false;

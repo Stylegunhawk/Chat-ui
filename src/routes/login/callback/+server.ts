@@ -87,6 +87,7 @@ export async function GET({ url, locals, cookies, request, getClientAddress }) {
 	await updateUser({
 		userData,
 		token,
+		issuer: iss,
 		locals,
 		cookies,
 		userAgent: request.headers.get("user-agent") ?? undefined,

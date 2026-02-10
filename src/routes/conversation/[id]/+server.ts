@@ -26,8 +26,9 @@ import type { TextGenerationContext } from "$lib/server/textGeneration/types";
 import { logger } from "$lib/server/logger.js";
 import { AbortRegistry } from "$lib/server/abortRegistry";
 import { MetricsServer } from "$lib/server/metrics";
+import type { RequestHandler } from "./$types";
 
-export async function POST({ request, locals, params, getClientAddress }) {
+export const POST: RequestHandler = async ({ request, locals, params, getClientAddress }) => {
 	const id = z.string().parse(params.id);
 	const convId = new ObjectId(id);
 	const promptedAt = new Date();
@@ -186,8 +187,8 @@ export async function POST({ request, locals, params, getClientAddress }) {
 	const inputFiles = await Promise.all(
 		form
 			.getAll("files")
-			.filter((entry): entry is File => entry instanceof File && entry.size > 0)
-			.map(async (file) => {
+			.filter((entry: FormDataEntryValue): entry is File => entry instanceof File && entry.size > 0)
+			.map(async (file: File) => {
 				const [type, ...name] = file.name.split(";");
 
 				return {
@@ -305,6 +306,82 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		);
 		// build the prompt from the user message
 		messagesForPrompt = buildSubtree(conv, newUserMessageId);
+
+		// ============================================================================
+		// RAG INJECTION - Phase 1
+		// ============================================================================
+
+		try {
+			// Import RAG modules
+			const { ragClient } = await import("$lib/server/rag/client");
+			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
+			const { rewriteQueryWithHistory } = await import("$lib/server/rag/queryRewriter");
+
+			// Extract user query (last message in tree)
+			const userQuery = newPrompt?.trim();
+
+			// Get tenant ID from session (Google user ID)
+			const tenantId = locals.user?._id ?? locals.sessionId;
+
+			if (userQuery && tenantId) {
+				let rewriteQuery: string | undefined = undefined;
+				try {
+					// Attempt to rewrite query using history
+					// messagesForPrompt includes the current user message at the end
+					// We pass it to the rewriter which handles slicing history
+					console.log("[RAG][Phase2] Calling Query Rewriter");
+
+					// Build history WITHOUT current message (using parent messageId)
+					const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+
+					rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, { locals });
+					if (rewriteQuery === userQuery) rewriteQuery = undefined;
+
+					if (rewriteQuery) {
+						console.log("[RAG][Phase2] Original:", userQuery);
+						console.log("[RAG][Phase2] Rewritten:", rewriteQuery);
+					}
+				} catch (e) {
+					console.warn("[RAG] Rewrite failed, using original query", e);
+				}
+
+				console.log("[RAG] Attempting search for:", userQuery);
+				console.log("[RAG] Tenant ID:", tenantId);
+
+				// Call backend RAG search
+				const ragResponse = await ragClient.semanticSearch(
+					{
+						messageId: newUserMessageId.toString(),
+						userQuery,
+						rewriteQuery,
+						top_k: 5, // Start conservative
+					},
+					tenantId.toString()
+				);
+
+				console.log("[RAG] Retrieved chunks:", ragResponse.chunks.length);
+
+				// If chunks found, inject context
+				if (ragResponse.chunks.length > 0) {
+					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
+
+					// Insert BEFORE user message (so LLM sees context first)
+					// messagesForPrompt is now: [...history, ragContext, userMessage]
+					messagesForPrompt.splice(messagesForPrompt.length - 1, 0, ragContextMessage);
+
+					console.log("[RAG] Context injected successfully");
+				} else {
+					console.log("[RAG] No relevant chunks found");
+				}
+			}
+		} catch (error) {
+			// NEVER block chat if RAG fails - degrade gracefully
+			console.error("[RAG] Search failed, proceeding without context:", error);
+		}
+
+		// ============================================================================
+		// END RAG INJECTION
+		// ============================================================================
 	}
 
 	const messageToWriteTo = conv.messages.find((message) => message.id === messageToWriteToId);
@@ -658,9 +735,9 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			"Content-Type": "application/jsonl",
 		},
 	});
-}
+};
 
-export async function DELETE({ locals, params }) {
+export const DELETE: RequestHandler = async ({ locals, params }) => {
 	const convId = new ObjectId(params.id);
 
 	const conv = await collections.conversations.findOne({
@@ -675,9 +752,9 @@ export async function DELETE({ locals, params }) {
 	await collections.conversations.deleteOne({ _id: conv._id });
 
 	return new Response();
-}
+};
 
-export async function PATCH({ request, locals, params }) {
+export const PATCH: RequestHandler = async ({ request, locals, params }) => {
 	const values = z
 		.object({
 			title: z.string().trim().min(1).max(100).optional(),
@@ -714,4 +791,4 @@ export async function PATCH({ request, locals, params }) {
 	);
 
 	return new Response();
-}
+};

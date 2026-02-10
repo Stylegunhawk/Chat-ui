@@ -1,0 +1,16 @@
+npm install 
+
+docker run -d \
+  --name mongo-chatui \
+  -p 27019:27017 \
+  -v mongo-chatui-data:/data/db \
+  mongo:7
+
+  env :
+  # already set for Ollama
+OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+OPENAI_API_KEY=ollama
+
+# new: MongoDB in Docker on localhost:27017
+MONGODB_URL=mongodb://localhost:27019
+MONGODB_DB_NAME=chat-ui

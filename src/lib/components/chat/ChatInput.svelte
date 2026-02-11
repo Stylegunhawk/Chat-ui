@@ -12,6 +12,7 @@
 	import CarbonChevronRight from "~icons/carbon/chevron-right";
 	import CarbonClose from "~icons/carbon/close";
 	import UrlFetchModal from "./UrlFetchModal.svelte";
+	import RagFileManager from "./RagFileManager.svelte";
 	import { TEXT_MIME_ALLOWLIST, IMAGE_MIME_ALLOWLIST_DEFAULT } from "$lib/constants/mime";
 	import MCPServerManager from "$lib/components/mcp/MCPServerManager.svelte";
 	import IconMCP from "$lib/components/icons/IconMCP.svelte";
@@ -78,6 +79,7 @@
 	let fileInputEl: HTMLInputElement | undefined = $state();
 	let isUrlModalOpen = $state(false);
 	let isMcpManagerOpen = $state(false);
+	let isRagManagerOpen = $state(false);
 	let isDropdownOpen = $state(false);
 
 	function openPickerWithAccept(accept: string) {
@@ -295,6 +297,15 @@
 									</DropdownMenu.Item>
 								{/if}
 
+								<!-- RAG File Manager -->
+								<DropdownMenu.Item
+									class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 sm:h-8"
+									onSelect={() => (isRagManagerOpen = true)}
+								>
+									<CarbonDocument class="size-4 opacity-90 dark:opacity-80" />
+									Manage RAG Files
+								</DropdownMenu.Item>
+
 								<DropdownMenu.Sub>
 									<DropdownMenu.SubTrigger
 										class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 data-[state=open]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 dark:data-[state=open]:bg-white/10 sm:h-8"
@@ -459,6 +470,10 @@
 
 	{#if isMcpManagerOpen}
 		<MCPServerManager onclose={() => (isMcpManagerOpen = false)} />
+	{/if}
+
+	{#if isRagManagerOpen}
+		<RagFileManager onclose={() => (isRagManagerOpen = false)} />
 	{/if}
 </div>
 

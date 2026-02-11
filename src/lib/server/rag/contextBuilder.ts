@@ -4,7 +4,7 @@
  * CRITICAL: Use structured format so LLM can reference specific chunks
  */
 
-import type { ChatFileChunk } from "./client";
+import type { ChatFileChunk } from "$lib/rag/client";
 
 interface RagContextMessage {
 	from: "system";

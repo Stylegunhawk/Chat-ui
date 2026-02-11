@@ -313,7 +313,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 		try {
 			// Import RAG modules
-			const { ragClient } = await import("$lib/server/rag/client");
+			const { ragClient } = await import("$lib/rag/client");
 			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
 			const { rewriteQueryWithHistory } = await import("$lib/server/rag/queryRewriter");
 

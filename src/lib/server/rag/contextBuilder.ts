@@ -6,16 +6,10 @@
 
 import type { ChatFileChunk } from "$lib/rag/client";
 
-interface RagContextMessage {
-	from: "system";
-	content: string;
-	id: string;
-	createdAt: Date;
-	metadata: {
-		type: "rag-context";
-		chunkIds: string[];
-	};
-}
+import { type RagContextMessage } from "$lib/rag/context";
+
+// Re-export for server usage
+export { isRagContextMessage } from "$lib/rag/context";
 
 /**
  * Detect programming language from filename
@@ -100,22 +94,10 @@ ${formattedChunks}
 		content: contextContent,
 		id: messageId,
 		createdAt: new Date(),
+		ragChunks: chunks, // Pass full chunk objects to frontend
 		metadata: {
 			type: "rag-context",
 			chunkIds: chunks.map((c) => c.id),
 		},
 	};
-}
-
-/**
- * Check if message is RAG context (for filtering/display)
- */
-export function isRagContextMessage(message: unknown): message is RagContextMessage {
-	if (typeof message !== "object" || message === null) {
-		return false;
-	}
-
-	const m = message as Partial<RagContextMessage>;
-
-	return m.metadata?.type === "rag-context";
 }

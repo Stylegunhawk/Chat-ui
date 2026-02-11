@@ -19,6 +19,9 @@ export type Message = Partial<Timestamps> & {
 	files?: MessageFile[];
 	interrupted?: boolean;
 
+	// RAG Chunks for citation visualization
+	ragChunks?: import("../rag/client").ChatFileChunk[];
+
 	// Router metadata when using llm-router
 	routerMetadata?: {
 		route: string;

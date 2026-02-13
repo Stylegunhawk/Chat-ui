@@ -40,11 +40,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		// URL validation handled above
 
-		if (!isValidUrl(url)) {
+		if (!isValidUrl(url, { allowHttp: true, allowLocal: true })) {
 			return new Response(
 				JSON.stringify({
 					ready: false,
-					error: "Invalid or unsafe URL (only HTTPS is supported)",
+					error: "Invalid or unsafe URL",
 				} as HealthCheckResponse),
 				{ status: 400, headers: { "Content-Type": "application/json" } }
 			);

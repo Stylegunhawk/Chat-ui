@@ -125,12 +125,12 @@
 			id="server-url"
 			type="url"
 			bind:value={url}
-			placeholder="https://example.com/mcp"
+			placeholder="http://localhost:8000/mcp"
 			class="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
 		/>
-		<!-- <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-			Only HTTPS is supported (e.g., https://localhost:5101).
-		</p> -->
+		<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+			HTTP and local addresses are supported (e.g., http://localhost:8001/mcp).
+		</p>
 	</div>
 
 	<!-- HTTP Headers -->

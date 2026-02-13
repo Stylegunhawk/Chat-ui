@@ -145,7 +145,7 @@ export async function* runMcpFlow({
 		const before = servers.slice();
 		servers = servers.filter((s) => {
 			try {
-				return isValidUrl(s.url);
+				return isValidUrl(s.url, { allowHttp: true, allowLocal: true });
 			} catch {
 				return false;
 			}

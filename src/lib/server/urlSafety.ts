@@ -1,11 +1,24 @@
 // Shared server-side URL safety helper (exact behavior preserved)
-export function isValidUrl(urlString: string): boolean {
+export function isValidUrl(
+	urlString: string,
+	options: { allowHttp?: boolean; allowLocal?: boolean } = {}
+): boolean {
 	try {
 		const url = new URL(urlString.trim());
-		// Only allow HTTPS protocol
-		if (url.protocol !== "https:") {
+		// Only allow HTTPS protocol by default
+		if (!options.allowHttp && url.protocol !== "https:") {
 			return false;
 		}
+
+		// Basic check for allowed protocols
+		if (!["http:", "https:"].includes(url.protocol)) {
+			return false;
+		}
+
+		if (options.allowLocal) {
+			return true;
+		}
+
 		// Prevent localhost/private IPs (basic check)
 		const hostname = url.hostname.toLowerCase();
 		if (

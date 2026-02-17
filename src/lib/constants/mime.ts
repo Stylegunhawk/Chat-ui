@@ -6,6 +6,8 @@ export const TEXT_MIME_ALLOWLIST = [
 	"application/json",
 	"application/xml",
 	"application/csv",
+	".prisma",
+	".graphql",
 ] as const;
 
 export const IMAGE_MIME_ALLOWLIST_DEFAULT = ["image/jpeg", "image/png"] as const;

@@ -91,6 +91,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		messages,
 		model: values.model,
 		preprompt: values.preprompt,
+		ragEnabled: true,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		userAgent: request.headers.get("User-Agent") ?? undefined,

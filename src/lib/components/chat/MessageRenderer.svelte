@@ -2,7 +2,7 @@
 	import type { Message } from "$lib/types/Message";
 	import type { MessageToolUpdate } from "$lib/types/MessageUpdate";
 	import { isRagContextMessage } from "$lib/rag/context";
-	
+
 	import MarkdownRenderer from "./MarkdownRenderer.svelte";
 	import OpenReasoningResults from "./OpenReasoningResults.svelte";
 	import ToolUpdate from "./ToolUpdate.svelte";
@@ -22,12 +22,12 @@
 		hasClientThink?: boolean;
 	}
 
-	let { 
-		message, 
-		blocks, 
-		loading = false, 
+	let {
+		message,
+		blocks,
+		loading = false,
 		isLast = false,
-		hasClientThink = false 
+		hasClientThink = false,
 	}: Props = $props();
 
 	// Zero-config reasoning autodetection regex (same as in ChatMessage)
@@ -41,13 +41,13 @@
 	{#if isLast && loading && blocks.length === 0}
 		<IconLoading classNames="loading inline ml-2 first:ml-0" />
 	{/if}
-	
+
 	{#each blocks as block, blockIndex (block.type === "tool" ? `${block.uuid}-${blockIndex}` : `text-${blockIndex}`)}
 		{@const nextBlock = blocks[blockIndex + 1]}
 		{@const nextBlockHasThink =
 			nextBlock?.type === "text" && THINK_BLOCK_TEST_REGEX.test(nextBlock.content)}
 		{@const nextIsLinkable = nextBlock?.type === "tool" || nextBlockHasThink}
-		
+
 		{#if block.type === "tool"}
 			<div data-exclude-from-copy class="has-[+.prose]:mb-3 [.prose+&]:mt-4">
 				<ToolUpdate tool={block.updates} {loading} hasNext={nextIsLinkable} />

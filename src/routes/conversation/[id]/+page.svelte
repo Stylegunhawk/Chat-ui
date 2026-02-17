@@ -29,6 +29,8 @@
 	import SubscribeModal from "$lib/components/SubscribeModal.svelte";
 	import { loading } from "$lib/stores/loading.js";
 	import { requireAuthUser } from "$lib/utils/auth.js";
+	import { browserRagClient as ragClient } from "$lib/rag/browserClient";
+	import type { RagFileMetadata } from "$lib/rag/client";
 
 	let { data = $bindable() } = $props();
 
@@ -37,6 +39,7 @@
 	let showSubscribeModal = $state(false);
 
 	let files: File[] = $state([]);
+	let ragFiles = $state<RagFileMetadata[]>([]);
 
 	let conversations = $state(data.conversations);
 	$effect(() => {
@@ -226,6 +229,7 @@
 						url: s.url,
 						headers: s.headers,
 					})),
+					availableFiles: ragFiles.map((f) => f.name),
 				},
 				messageUpdatesAbortController.signal
 			).catch((err) => {
@@ -423,6 +427,14 @@
 			$pendingMessage = undefined;
 		}
 
+		// Fetch RAG files on mount
+		try {
+			const tenantId = data.user?._id?.toString() || data.sessionId || "";
+			ragFiles = await ragClient.listFiles(tenantId);
+		} catch (e) {
+			console.error("[RAG] Failed to fetch files on mount:", e);
+		}
+
 		const streaming = isConversationStreaming(messages);
 		if (streaming) {
 			addBackgroundGeneration({ id: page.params.id, startedAt: Date.now() });
@@ -450,6 +462,27 @@
 	async function onShowAlternateMsg(payload: { id: Message["id"] }) {
 		const msgId = payload.id;
 		messagesPath = createMessagesPath(messages, msgId);
+	}
+
+	async function onRagToggle(enabled: boolean) {
+		try {
+			const res = await fetch(`${base}/conversation/${page.params.id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ ragEnabled: enabled }),
+			});
+			if (!res.ok) {
+				return;
+			}
+			// Refresh files after toggle change if it was enabled
+			if (enabled) {
+				const tenantId = data.user?._id?.toString() || data.sessionId || "";
+				ragFiles = await ragClient.listFiles(tenantId);
+			}
+			await invalidateAll();
+		} catch (e) {
+			console.error("[RAG Toggle] fetch error:", e);
+		}
 	}
 
 	const settings = useSettingsStore();
@@ -535,6 +568,13 @@
 	onstop={stopGeneration}
 	models={data.models}
 	currentModel={findCurrentModel(data.models, data.oldModels, data.model)}
+	ragEnabled={data.ragEnabled}
+	{ragFiles}
+	onragtoggle={onRagToggle}
+	onragfilesrefresh={async () => {
+		const tenantId = data.user?._id?.toString() || data.sessionId || "";
+		ragFiles = await ragClient.listFiles(tenantId);
+	}}
 />
 
 {#if showSubscribeModal}

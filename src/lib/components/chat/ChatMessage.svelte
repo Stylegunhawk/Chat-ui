@@ -5,20 +5,16 @@
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 	const publicConfig = usePublicConfig();
 	import CopyToClipBoardBtn from "../CopyToClipBoardBtn.svelte";
-	import IconLoading from "../icons/IconLoading.svelte";
 	import CarbonRotate360 from "~icons/carbon/rotate-360";
 	// import CarbonDownload from "~icons/carbon/download";
 
 	import CarbonPen from "~icons/carbon/pen";
 	import UploadedFile from "./UploadedFile.svelte";
 
-	import MarkdownRenderer from "./MarkdownRenderer.svelte";
-	import OpenReasoningResults from "./OpenReasoningResults.svelte";
 	import Alternatives from "./Alternatives.svelte";
 	import MessageAvatar from "./MessageAvatar.svelte";
 	import { PROVIDERS_HUB_ORGS } from "@huggingface/inference";
 	import { requireAuthUser } from "$lib/utils/auth";
-	import ToolUpdate from "./ToolUpdate.svelte";
 	import { isMessageToolUpdate } from "$lib/utils/messageUpdates";
 	import { MessageUpdateType, type MessageToolUpdate } from "$lib/types/MessageUpdate";
 	import ImageLightbox from "./ImageLightbox.svelte";
@@ -33,6 +29,7 @@
 		alternatives?: Message["id"][];
 		editMsdgId?: Message["id"] | null;
 		isLast?: boolean;
+		ragFiles?: import("$lib/rag/client").RagFileMetadata[];
 		onretry?: (payload: { id: Message["id"]; content?: string }) => void;
 		onshowAlternateMsg?: (payload: { id: Message["id"] }) => void;
 	}
@@ -46,6 +43,7 @@
 		alternatives = [],
 		editMsdgId = $bindable(null),
 		isLast = false,
+		ragFiles = [],
 		onretry,
 		onshowAlternateMsg,
 	}: Props = $props();
@@ -127,8 +125,6 @@
 
 	// Zero-config reasoning autodetection: detect <think> blocks in content
 	const THINK_BLOCK_REGEX = /(<think>[\s\S]*?(?:<\/think>|$))/gi;
-	// Non-global version for .test() calls to avoid lastIndex side effects
-	const THINK_BLOCK_TEST_REGEX = /(<think>[\s\S]*?(?:<\/think>|$))/i;
 	let hasClientThink = $derived(message.content.split(THINK_BLOCK_REGEX).length > 1);
 
 	// Strip think blocks for clipboard copy (always, regardless of detection)
@@ -264,20 +260,14 @@
 			{#if message.files?.length}
 				<div class="flex h-fit flex-wrap gap-x-5 gap-y-2">
 					{#each message.files as file (file.value)}
-						<UploadedFile {file} canClose={false} />
+						<UploadedFile {file} canClose={false} {ragFiles} />
 					{/each}
 				</div>
 			{/if}
 
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 			<div bind:this={contentEl} oncopy={handleCopy} onclick={handleContentClick}>
-				<MessageRenderer
-					{message}
-					{blocks}
-					{loading}
-					{isLast}
-					{hasClientThink}
-				/>
+				<MessageRenderer {message} {blocks} {loading} {isLast} {hasClientThink} />
 			</div>
 		</div>
 
@@ -381,7 +371,7 @@
 			{#if message.files?.length}
 				<div class="flex w-fit gap-4 px-5">
 					{#each message.files as file}
-						<UploadedFile {file} canClose={false} />
+						<UploadedFile {file} canClose={false} {ragFiles} />
 					{/each}
 				</div>
 			{/if}

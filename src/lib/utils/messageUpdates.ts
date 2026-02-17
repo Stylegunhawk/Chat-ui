@@ -25,6 +25,7 @@ type MessageUpdateRequestOptions = {
 	selectedMcpServerNames?: string[];
 	// Optional: pass selected MCP server configs (for custom client-defined servers)
 	selectedMcpServers?: Array<{ name: string; url: string; headers?: KeyValuePair[] }>;
+	availableFiles?: string[];
 };
 export async function fetchMessageUpdates(
 	conversationId: string,
@@ -44,6 +45,7 @@ export async function fetchMessageUpdates(
 		// Will be ignored server-side if unsupported
 		selectedMcpServerNames: opts.selectedMcpServerNames,
 		selectedMcpServers: opts.selectedMcpServers,
+		availableFiles: opts.availableFiles,
 	});
 
 	opts.files?.forEach((file) => {

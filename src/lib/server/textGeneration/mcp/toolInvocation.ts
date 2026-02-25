@@ -42,6 +42,7 @@ export interface ExecuteToolCallsParams {
 	};
 	abortSignal?: AbortSignal;
 	toolTimeoutMs?: number;
+	locals?: App.Locals;
 }
 
 export interface ToolCallExecutionResult {
@@ -74,6 +75,7 @@ export async function* executeToolCalls({
 	processToolOutput,
 	abortSignal,
 	toolTimeoutMs,
+	locals,
 }: ExecuteToolCallsParams): AsyncGenerator<ToolExecutionEvent, void, undefined> {
 	const effectiveTimeoutMs = toolTimeoutMs ?? getMcpToolTimeoutMs();
 	const toolMessages: ChatCompletionMessageParam[] = [];
@@ -104,6 +106,21 @@ export async function* executeToolCalls({
 		attachFileRefsToArgs(argsObj, resolveFileRef);
 		return { call, argsObj, paramsClean, uuid: randomUUID() };
 	});
+
+	// Inject GitHub token for github_operation tool calls
+	for (const p of prepared) {
+		const mappingEntry = mapping[p.call.name];
+		if (
+			mappingEntry?.tool === "github_operation" &&
+			locals?.settings &&
+			typeof locals.settings.githubToken === "string"
+		) {
+			p.argsObj.context = {
+				...(p.argsObj.context as Record<string, unknown> | undefined),
+				github_token: locals.settings.githubToken,
+			};
+		}
+	}
 
 	for (const p of prepared) {
 		yield {

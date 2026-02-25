@@ -49,6 +49,59 @@
 	let billingOrgsLoading = $state(false);
 	let billingOrgsError = $state<string | null>(null);
 
+	// GitHub token state
+	let githubTokenInput = $state("");
+	let githubTokenSaving = $state(false);
+	let githubTokenError = $state<string | null>(null);
+	let showGithubToken = $state(false);
+
+	function getGithubToken() {
+		return $settings.githubToken ?? null;
+	}
+
+	// Check if current input matches the masked placeholder (user hasn't entered a new token)
+	function isInputMaskedPlaceholder() {
+		return githubTokenInput.trim() === "ghp_****";
+	}
+
+	async function saveGithubToken() {
+		// If input is the masked placeholder, skip saving (no change to make)
+		if (isInputMaskedPlaceholder()) {
+			return;
+		}
+		if (!githubTokenInput.trim()) {
+			githubTokenError = "Token cannot be empty";
+			return;
+		}
+		githubTokenSaving = true;
+		githubTokenError = null;
+		try {
+			await client.user.settings.post({ githubToken: githubTokenInput.trim() });
+			settings.update((s) => ({ ...s, githubToken: "ghp_****" }));
+			githubTokenInput = "";
+			showGithubToken = false;
+		} catch (e) {
+			githubTokenError = "Failed to save token";
+			console.error(e);
+		} finally {
+			githubTokenSaving = false;
+		}
+	}
+
+	async function clearGithubToken() {
+		githubTokenSaving = true;
+		githubTokenError = null;
+		try {
+			await client.user.settings.post({ githubToken: "" });
+			settings.update((s) => ({ ...s, githubToken: null }));
+		} catch (e) {
+			githubTokenError = "Failed to clear token";
+			console.error(e);
+		} finally {
+			githubTokenSaving = false;
+		}
+	}
+
 	function getBillingOrganization() {
 		return $settings.billingOrganization ?? "";
 	}
@@ -310,6 +363,77 @@
 						>
 							View Usage
 						</a>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- GitHub Integration section -->
+		{#if page.data.user}
+			<div
+				class="rounded-xl border border-gray-200 bg-white px-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+			>
+				<div class="divide-y divide-gray-200 dark:divide-gray-700">
+					<div class="flex items-start justify-between py-3">
+						<div>
+							<div class="text-[13px] font-medium text-gray-800 dark:text-gray-200">
+								GitHub Integration
+							</div>
+							<p class="text-[12px] text-gray-500 dark:text-gray-400">
+								Store a Personal Access Token for GitHub MCP tool operations.
+							</p>
+						</div>
+					</div>
+					<div class="py-3">
+						{#if getGithubToken()}
+							<div class="mb-2 flex items-center gap-2">
+								<span class="text-xs text-gray-600 dark:text-gray-400">Current token:</span>
+								<code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-700"
+									>{getGithubToken()}</code
+								>
+								<button
+									type="button"
+									class="text-xs text-red-600 hover:underline dark:text-red-400"
+									onclick={clearGithubToken}
+									disabled={githubTokenSaving}
+								>
+									Clear
+								</button>
+							</div>
+						{/if}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2">
+								<input
+									type={showGithubToken ? "text" : "password"}
+									placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+									bind:value={githubTokenInput}
+									class="flex-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500"
+								/>
+								<button
+									type="button"
+									class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+									onclick={() => (showGithubToken = !showGithubToken)}
+								>
+									{showGithubToken ? "Hide" : "Show"}
+								</button>
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="rounded-md bg-black px-3 py-1 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-200 dark:text-gray-900 dark:hover:bg-gray-300"
+									onclick={saveGithubToken}
+									disabled={githubTokenSaving || !githubTokenInput.trim()}
+								>
+									{githubTokenSaving ? "Saving..." : "Save Token"}
+								</button>
+								{#if githubTokenError}
+									<span class="text-xs text-red-500">{githubTokenError}</span>
+								{/if}
+							</div>
+							<p class="text-[11px] text-gray-500 dark:text-gray-400">
+								Token is stored securely and only used for GitHub MCP tool calls.
+							</p>
+						</div>
 					</div>
 				</div>
 			</div>

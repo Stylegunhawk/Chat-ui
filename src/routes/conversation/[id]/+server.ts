@@ -622,6 +622,8 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 				// Add billing organization to locals for the endpoint to use
 				locals.billingOrganization = userSettings?.billingOrganization;
+				// Add settings to locals for MCP tool injection
+				locals.settings = userSettings ?? undefined;
 
 				const ctx: TextGenerationContext = {
 					model,

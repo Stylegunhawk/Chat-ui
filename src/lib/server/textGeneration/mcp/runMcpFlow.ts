@@ -677,6 +677,7 @@ export async function* runMcpFlow({
 					toPrimitive,
 					processToolOutput,
 					abortSignal,
+					locals,
 				});
 				let toolMsgCount = 0;
 				let toolRunCount = 0;

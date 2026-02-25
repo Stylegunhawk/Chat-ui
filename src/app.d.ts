@@ -15,6 +15,8 @@ declare global {
 			token?: string;
 			/** Organization to bill inference requests to (from settings) */
 			billingOrganization?: string;
+			/** User settings from database */
+			settings?: import("$lib/types/Settings").Settings;
 		}
 
 		interface Error {

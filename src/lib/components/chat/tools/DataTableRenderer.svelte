@@ -11,7 +11,7 @@
 
 	interface Props {
 		update: MessageToolResultUpdate;
-		parseToolOutputs: (outputs: unknown[]) => any[];
+		parseToolOutputs: (outputs: unknown[]) => unknown[];
 		formatValue: (value: unknown) => string;
 	}
 
@@ -44,7 +44,7 @@
 	});
 
 	let entities = $derived(toolOutput?.entities ?? []);
-	let activeEntity = $state(entities[0] ?? "");
+	let activeEntity = $state("");
 	let isModalOpen = $state(false);
 
 	// Sync activeEntity when toolOutput changes
@@ -102,15 +102,22 @@
 {#if toolOutput}
 	<div class="flex flex-col gap-3">
 		<!-- Header with Metadata -->
-		<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 dark:border-gray-700">
+		<div
+			class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 dark:border-gray-700"
+		>
 			<div class="flex items-center gap-2">
-				<div class="flex h-6 w-6 items-center justify-center rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+				<div
+					class="flex h-6 w-6 items-center justify-center rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+				>
 					<CarbonTable class="size-4" />
 				</div>
-				<span class="text-xs font-semibold text-gray-700 dark:text-gray-300">Generated Dataset</span>
+				<span class="text-xs font-semibold text-gray-700 dark:text-gray-300">Generated Dataset</span
+				>
 				{#if toolOutput.metadata?.semantic_analysis_summary}
 					{@const summary = toolOutput.metadata.semantic_analysis_summary}
-					<span class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+					<span
+						class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+					>
 						{#if typeof summary === "object" && summary !== null}
 							Avg confidence: {(summary.avg_confidence * 100).toFixed(0)}% ·
 							{summary.total_fields} fields analyzed
@@ -118,12 +125,12 @@
 							{summary}
 						{/if}
 					</span>
-				{:else}
-					{#if toolOutput.metadata?.performance}
-						<span class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-							{toolOutput.metadata.performance}
-						</span>
-					{/if}
+				{:else if toolOutput.metadata?.performance}
+					<span
+						class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+					>
+						{toolOutput.metadata.performance}
+					</span>
 				{/if}
 			</div>
 
@@ -164,7 +171,8 @@
 					<button
 						type="button"
 						onclick={() => (activeEntity = entity)}
-						class="rounded-md px-3 py-1 text-xs font-medium transition-colors {activeEntity === entity
+						class="rounded-md px-3 py-1 text-xs font-medium transition-colors {activeEntity ===
+						entity
 							? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
 							: 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}"
 					>
@@ -176,12 +184,16 @@
 		{/if}
 
 		<!-- Table Preview -->
-		<div class="scrollbar-custom relative max-h-80 overflow-auto rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800/50">
+		<div
+			class="scrollbar-custom relative max-h-80 overflow-auto rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800/50"
+		>
 			<table class="w-full text-left text-[11px] text-gray-600 dark:text-gray-400">
-				<thead class="sticky top-0 z-10 bg-gray-50 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+				<thead
+					class="sticky top-0 z-10 bg-gray-50 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+				>
 					<tr>
 						{#each columns as column}
-							<th class="border-b border-gray-100 px-3 py-2 whitespace-nowrap dark:border-gray-700">
+							<th class="whitespace-nowrap border-b border-gray-100 px-3 py-2 dark:border-gray-700">
 								{column}
 							</th>
 						{/each}
@@ -191,7 +203,7 @@
 					{#each currentRows.slice(0, 10) as row}
 						<tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
 							{#each columns as column}
-								<td class="px-3 py-2 whitespace-nowrap">
+								<td class="whitespace-nowrap px-3 py-2">
 									{row[column]?.toString() ?? ""}
 								</td>
 							{/each}
@@ -199,7 +211,10 @@
 					{/each}
 					{#if currentRows.length > 10}
 						<tr>
-							<td colspan={columns.length} class="bg-gray-50/30 px-3 py-2 text-center text-[10px] italic text-gray-400 dark:bg-gray-800/20">
+							<td
+								colspan={columns.length}
+								class="bg-gray-50/30 px-3 py-2 text-center text-[10px] italic text-gray-400 dark:bg-gray-800/20"
+							>
 								+ {currentRows.length - 10} more rows (view in fullscreen)
 							</td>
 						</tr>
@@ -210,7 +225,9 @@
 
 		<!-- Field Analysis Summary -->
 		{#if toolOutput.metadata?.semantic_analysis_summary}
-			<div class="rounded-lg bg-emerald-50/50 p-3 text-[11px] text-emerald-800 dark:bg-emerald-900/10 dark:text-emerald-300">
+			<div
+				class="rounded-lg bg-emerald-50/50 p-3 text-[11px] text-emerald-800 dark:bg-emerald-900/10 dark:text-emerald-300"
+			>
 				<div class="mb-1 flex items-center gap-1.5 font-semibold">
 					<CarbonChartCombo class="size-3" />
 					Semantic Analysis
@@ -294,7 +311,8 @@
 						<button
 							type="button"
 							onclick={() => (activeEntity = entity)}
-							class="flex-1 rounded-md py-2 text-sm font-semibold transition-all {activeEntity === entity
+							class="flex-1 rounded-md py-2 text-sm font-semibold transition-all {activeEntity ===
+							entity
 								? 'bg-white shadow-sm dark:bg-gray-800 dark:text-white'
 								: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}"
 						>
@@ -304,13 +322,19 @@
 				</div>
 			{/if}
 
-			<div class="scrollbar-custom flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
+			<div
+				class="scrollbar-custom flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700"
+			>
 				<table class="w-full text-left text-sm text-gray-600 dark:text-gray-400">
-					<thead class="sticky top-0 z-10 bg-gray-50 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+					<thead
+						class="sticky top-0 z-10 bg-gray-50 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+					>
 						<tr>
 							<th class="w-12 border-b border-gray-200 px-4 py-3 dark:border-gray-700">#</th>
 							{#each columns as column}
-								<th class="border-b border-gray-200 px-4 py-3 whitespace-nowrap dark:border-gray-700">
+								<th
+									class="whitespace-nowrap border-b border-gray-200 px-4 py-3 dark:border-gray-700"
+								>
 									{column}
 								</th>
 							{/each}
@@ -321,7 +345,7 @@
 							<tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
 								<td class="px-4 py-2.5 font-mono text-xs opacity-50">{i + 1}</td>
 								{#each columns as column}
-									<td class="px-4 py-2.5 whitespace-nowrap">
+									<td class="whitespace-nowrap px-4 py-2.5">
 										{row[column]?.toString() ?? ""}
 									</td>
 								{/each}

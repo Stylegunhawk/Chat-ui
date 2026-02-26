@@ -354,6 +354,11 @@ export async function* runMcpFlow({
 		if (typeof preprompt === "string" && preprompt.trim().length > 0) {
 			prepromptPieces.push(preprompt);
 		}
+		if (conv.ragEnabled === false) {
+			prepromptPieces.push(
+				"Note: Document search (RAG) is currently disabled. Do not call retrieve_docs. Work with conversation context only."
+			);
+		}
 		const mergedPreprompt = prepromptPieces.join("\n\n");
 		const hasSystemMessage = messagesOpenAI.length > 0 && messagesOpenAI[0]?.role === "system";
 		if (hasSystemMessage) {

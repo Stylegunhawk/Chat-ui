@@ -31,12 +31,17 @@
 	import { requireAuthUser } from "$lib/utils/auth.js";
 	import { browserRagClient as ragClient } from "$lib/rag/browserClient";
 	import type { RagFileMetadata } from "$lib/rag/client";
+	import { containsDestructiveKeyword } from "$lib/utils/safety";
+	import Modal from "$lib/components/Modal.svelte";
 
 	let { data = $bindable() } = $props();
 
 	let pending = $state(false);
 	let initialRun = true;
 	let showSubscribeModal = $state(false);
+	let showSafetyModal = $state(false);
+	let safetyPendingPrompt = $state("");
+	let safetyPendingRetryPayload = $state<{ id: Message["id"]; content?: string } | null>(null);
 
 	let files: File[] = $state([]);
 	let ragFiles = $state<RagFileMetadata[]>([]);
@@ -422,9 +427,16 @@
 
 	onMount(async () => {
 		if ($pendingMessage) {
-			files = $pendingMessage.files;
-			await writeMessage({ prompt: $pendingMessage.content });
-			$pendingMessage = undefined;
+			if (containsDestructiveKeyword($pendingMessage.content || "")) {
+				files = $pendingMessage.files || [];
+				safetyPendingPrompt = $pendingMessage.content || "";
+				showSafetyModal = true;
+				$pendingMessage = undefined;
+			} else {
+				files = $pendingMessage.files || [];
+				await writeMessage({ prompt: $pendingMessage.content });
+				$pendingMessage = undefined;
+			}
 		}
 
 		// Fetch RAG files on mount
@@ -443,12 +455,43 @@
 	});
 
 	async function onMessage(content: string) {
+		if (containsDestructiveKeyword(content)) {
+			safetyPendingPrompt = content;
+			showSafetyModal = true;
+			return;
+		}
 		await writeMessage({ prompt: content });
+	}
+
+	function confirmSafetyAction() {
+		const content = safetyPendingPrompt;
+		const retryPayload = safetyPendingRetryPayload;
+
+		safetyPendingPrompt = "";
+		safetyPendingRetryPayload = null;
+		showSafetyModal = false;
+
+		if (retryPayload) {
+			executeRetry(retryPayload);
+		} else {
+			writeMessage({ prompt: content });
+		}
 	}
 
 	async function onRetry(payload: { id: Message["id"]; content?: string }) {
 		if (requireAuthUser()) return;
 
+		if (payload.content && containsDestructiveKeyword(payload.content)) {
+			safetyPendingPrompt = payload.content;
+			safetyPendingRetryPayload = payload;
+			showSafetyModal = true;
+			return;
+		}
+
+		await executeRetry(payload);
+	}
+
+	async function executeRetry(payload: { id: Message["id"]; content?: string }) {
 		const lastMsgId = payload.id;
 		messagesPath = createMessagesPath(messages, lastMsgId);
 
@@ -579,4 +622,38 @@
 
 {#if showSubscribeModal}
 	<SubscribeModal close={() => (showSubscribeModal = false)} />
+{/if}
+
+{#if showSafetyModal}
+	<Modal onclose={() => (showSafetyModal = false)}>
+		<div class="p-6">
+			<h3 class="mb-2 text-lg font-bold text-gray-900 dark:text-gray-100">
+				Confirm Dangerous Action
+			</h3>
+			<p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
+				This request contains keywords for potentially destructive operations:
+				<span
+					class="mt-2 block rounded bg-red-50 p-2 font-mono text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400"
+				>
+					"{safetyPendingPrompt}"
+				</span>
+			</p>
+			<div class="flex justify-end gap-3">
+				<button
+					type="button"
+					onclick={() => (showSafetyModal = false)}
+					class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					onclick={confirmSafetyAction}
+					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+				>
+					Proceed Anyway
+				</button>
+			</div>
+		</div>
+	</Modal>
 {/if}

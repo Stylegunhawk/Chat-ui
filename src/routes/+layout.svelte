@@ -24,6 +24,8 @@
 	import { shareModal } from "$lib/stores/shareModal";
 	import BackgroundGenerationPoller from "$lib/components/BackgroundGenerationPoller.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
+	import CarbonBook from "~icons/carbon/book";
+	import CheatsheetModal from "$lib/components/chat/CheatsheetModal.svelte";
 
 	let { data = $bindable(), children } = $props();
 
@@ -38,6 +40,7 @@
 	});
 
 	let isNavCollapsed = $state(false);
+	let showCheatsheet = $state(false);
 
 	let errorToastTimeout: ReturnType<typeof setTimeout>;
 	let currentError: string | undefined = $state();
@@ -58,10 +61,9 @@
 		}, 5000);
 	}
 
-	let canShare = $derived(
-		publicConfig.isHuggingChat &&
-			Boolean(page.params?.id) &&
-			page.route.id?.startsWith("/conversation/")
+	let canShare = $derived(Boolean(page.params?.id) && page.route.id?.startsWith("/conversation/"));
+	let canShowCheatsheet = $derived(
+		Boolean(page.params?.id) && page.route.id?.startsWith("/conversation/")
 	);
 
 	async function deleteConversation(id: string) {
@@ -276,6 +278,19 @@
 		>
 			<IconShare />
 		</button>
+	{/if}
+
+	{#if canShowCheatsheet}
+		<button
+			type="button"
+			onclick={() => (showCheatsheet = true)}
+			class="hidden size-8 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-sm shadow-sm hover:bg-white/60 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200 md:absolute md:right-16 md:top-5 md:flex"
+			title="Generate Cheatsheet"
+		>
+			<CarbonBook class="text-sm" />
+		</button>
+
+		<CheatsheetModal bind:open={showCheatsheet} messages={page.data.messages || []} />
 	{/if}
 
 	<MobileNav title={mobileNavTitle}>

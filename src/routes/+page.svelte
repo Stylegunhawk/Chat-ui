@@ -22,6 +22,7 @@
 	let hasModels = $derived(Boolean(data.models?.length));
 	let files: File[] = $state([]);
 	let draft = $state("");
+	let ragEnabled = $state(true);
 
 	const settings = useSettingsStore();
 
@@ -49,6 +50,7 @@
 				body: JSON.stringify({
 					model,
 					preprompt: $settings.customPrompts[$settings.activeModel],
+					ragEnabled,
 				}),
 			});
 
@@ -156,6 +158,8 @@
 		models={data.models}
 		bind:files
 		bind:draft
+		{ragEnabled}
+		onragtoggle={(enabled) => (ragEnabled = enabled)}
 	/>
 {:else}
 	<div class="mx-auto my-20 max-w-xl rounded-xl border p-6 text-center dark:border-gray-700">

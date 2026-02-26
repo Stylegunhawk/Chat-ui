@@ -21,6 +21,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			fromShare: z.string().optional(),
 			model: validateModel(models),
 			preprompt: z.string().optional(),
+			ragEnabled: z.boolean().optional(),
 		})
 		.safeParse(JSON.parse(body));
 
@@ -91,7 +92,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		messages,
 		model: values.model,
 		preprompt: values.preprompt,
-		ragEnabled: true,
+		ragEnabled: values.ragEnabled ?? true,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		userAgent: request.headers.get("User-Agent") ?? undefined,

@@ -24,4 +24,5 @@ export interface Conversation extends Timestamps {
 	assistantId?: Assistant["_id"];
 
 	userAgent?: string;
+	ragEnabled?: boolean;
 }

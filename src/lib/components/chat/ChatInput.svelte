@@ -44,6 +44,9 @@
 		onPaste?: (e: ClipboardEvent) => void;
 		focused?: boolean;
 		onsubmit?: () => void;
+		ragEnabled?: boolean;
+		onragtoggle?: (enabled: boolean) => void;
+		onragfilesrefresh?: () => Promise<void>;
 	}
 
 	let {
@@ -60,6 +63,9 @@
 		onPaste,
 		focused = $bindable(false),
 		onsubmit,
+		ragEnabled = true,
+		onragtoggle,
+		onragfilesrefresh,
 	}: Props = $props();
 
 	const onFileChange = async (e: Event) => {
@@ -456,6 +462,25 @@
 							</button>
 						</div>
 					{/if}
+
+					<div
+						class={[
+							"ml-2 inline-flex h-8 items-center gap-1.5 rounded-full border px-2 text-xs font-semibold sm:h-7",
+							ragEnabled
+								? "border-yellow-500 bg-yellow-600/10 text-yellow-700 dark:bg-yellow-600/20 dark:text-yellow-400"
+								: "border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
+						]}
+					>
+						<button
+							class="inline-flex cursor-pointer select-none items-center gap-1 bg-transparent p-0 leading-none text-current focus:outline-none"
+							type="button"
+							onclick={() => onragtoggle?.(!ragEnabled)}
+							title={ragEnabled ? "Disable RAG search" : "Enable RAG search"}
+						>
+							<span class="text-sm"></span>
+							<span>RAG: {ragEnabled ? "ON" : "OFF"}</span>
+						</button>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -473,7 +498,12 @@
 	{/if}
 
 	{#if isRagManagerOpen}
-		<RagFileManager onclose={() => (isRagManagerOpen = false)} />
+		<RagFileManager
+			onclose={() => {
+				isRagManagerOpen = false;
+				onragfilesrefresh?.();
+			}}
+		/>
 	{/if}
 </div>
 

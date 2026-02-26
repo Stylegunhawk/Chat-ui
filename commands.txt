@@ -14,3 +14,6 @@ OPENAI_API_KEY=ollama
 # new: MongoDB in Docker on localhost:27017
 MONGODB_URL=mongodb://localhost:27019
 MONGODB_DB_NAME=chat-ui
+
+
+npm run lint && npm run check && npm test

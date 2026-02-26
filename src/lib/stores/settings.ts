@@ -19,6 +19,7 @@ type SettingsStore = {
 	disableStream: boolean;
 	directPaste: boolean;
 	billingOrganization?: string;
+	githubToken?: string | null;
 };
 
 type SettingsStoreWritable = Writable<SettingsStore> & {

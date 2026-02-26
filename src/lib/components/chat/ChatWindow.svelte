@@ -66,6 +66,10 @@
 		onretry?: (payload: { id: Message["id"]; content?: string }) => void;
 		onshowAlternateMsg?: (payload: { id: Message["id"] }) => void;
 		draft?: string;
+		ragEnabled?: boolean;
+		onragtoggle?: (enabled: boolean) => void;
+		ragFiles?: import("$lib/rag/client").RagFileMetadata[];
+		onragfilesrefresh?: () => Promise<void>;
 	}
 
 	let {
@@ -83,6 +87,10 @@
 		onstop,
 		onretry,
 		onshowAlternateMsg,
+		ragEnabled = true,
+		onragtoggle,
+		ragFiles = [],
+		onragfilesrefresh,
 	}: Props = $props();
 
 	let isReadOnly = $derived(!models.some((model) => model.id === currentModel.id));
@@ -499,6 +507,7 @@
 							isAuthor={!shared}
 							readOnly={isReadOnly}
 							isLast={idx === messages.length - 1}
+							{ragFiles}
 							bind:editMsdgId
 							onretry={(payload) => onretry?.(payload)}
 							onshowAlternateMsg={(payload) => onshowAlternateMsg?.(payload)}
@@ -519,6 +528,7 @@
 					}}
 					isAuthor={!shared}
 					readOnly={isReadOnly}
+					{ragFiles}
 				/>
 			{:else}
 				<ChatIntroduction
@@ -579,6 +589,7 @@
 					{#await source then src}
 						<UploadedFile
 							file={src}
+							{ragFiles}
 							onclose={() => {
 								files = files.filter((_, i) => i !== index);
 							}}
@@ -649,6 +660,10 @@
 								{modelIsMultimodal}
 								{modelSupportsTools}
 								bind:focused
+								{ragEnabled}
+								{onragtoggle}
+								{ragFiles}
+								{onragfilesrefresh}
 							/>
 						{/if}
 

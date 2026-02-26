@@ -3,7 +3,6 @@
 	import { page } from "$app/state";
 	import Modal from "../Modal.svelte";
 	import CarbonDocument from "~icons/carbon/document";
-	import CarbonClose from "~icons/carbon/close";
 	import CarbonUpload from "~icons/carbon/upload";
 	import CarbonTrashCan from "~icons/carbon/trash-can";
 	import EosIconsLoading from "~icons/eos-icons/loading";
@@ -64,7 +63,7 @@
 				stopPolling();
 			}
 		} catch (e) {
-			// If polling fails, we might want to stop polling to avoid log spam, 
+			// If polling fails, we might want to stop polling to avoid log spam,
 			// but transient network issues shouldn't kill it permanently.
 			// For now, only show error in UI if standard load.
 			if (!silent) {
@@ -86,7 +85,7 @@
 		try {
 			// Convert FileList to Array
 			const fileArray = Array.from(selectedFiles);
-			
+
 			// Use centralized client
 			await ragClient.uploadFiles(fileArray, getTenantId());
 
@@ -155,7 +154,7 @@
 	});
 </script>
 
-<Modal width="max-w-2xl" onclose={onclose} closeButton={true}>
+<Modal width="max-w-2xl" {onclose} closeButton={true}>
 	{#snippet children()}
 		<div class="flex flex-col gap-4 p-6">
 			<!-- Header -->
@@ -202,7 +201,9 @@
 
 			<!-- Error Message -->
 			{#if errorMsg}
-				<div class="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+				<div
+					class="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
+				>
 					<p class="text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
 				</div>
 			{/if}
@@ -223,7 +224,9 @@
 					>
 						<CarbonDocument class="size-12 text-gray-300 dark:text-gray-600" />
 						<p class="text-sm text-gray-500 dark:text-gray-400">No files uploaded yet</p>
-						<p class="text-xs text-gray-400 dark:text-gray-500">Upload files to enable RAG search</p>
+						<p class="text-xs text-gray-400 dark:text-gray-500">
+							Upload files to enable RAG search
+						</p>
 					</div>
 				{:else}
 					<div class="scrollbar-custom max-h-96 space-y-2 overflow-y-auto">
@@ -240,7 +243,10 @@
 
 								<!-- File Info -->
 								<div class="flex min-w-0 flex-1 flex-col">
-									<p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200" title={file.name}>
+									<p
+										class="truncate text-sm font-medium text-gray-800 dark:text-gray-200"
+										title={file.name}
+									>
 										{truncateMiddle(file.name, 40)}
 									</p>
 									<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">

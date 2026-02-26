@@ -130,6 +130,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		is_retry: isRetry,
 		selectedMcpServerNames,
 		selectedMcpServers,
+		availableFiles,
 	} = z
 		.object({
 			id: z.string().uuid().refine(isMessageId).optional(), // parent message id to append to for a normal message, or the message id for a retry/continue
@@ -164,6 +165,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					})
 				)
 			),
+			availableFiles: z.optional(z.array(z.object({ id: z.string(), name: z.string() }))),
 		})
 		.parse(JSON.parse(json));
 
@@ -267,7 +269,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 				},
 				newUserMessageId
 			);
-			messagesForPrompt = buildSubtree(conv, newUserMessageId);
+			messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 		} else if (messageToRetry.from === "assistant") {
 			// we're retrying an assistant message, to generate a new answer
 			// just add a sibling to the assistant answer where we can write to
@@ -276,7 +278,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 				{ from: "assistant", content: "", createdAt: new Date(), updatedAt: new Date() },
 				messageId
 			);
-			messagesForPrompt = buildSubtree(conv, messageId);
+			messagesForPrompt = buildSubtree(conv, messageId).map((m) => ({ ...m }));
 			messagesForPrompt.pop(); // don't need the latest assistant message in the prompt since we're retrying it
 		}
 	} else {
@@ -305,7 +307,8 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			newUserMessageId
 		);
 		// build the prompt from the user message
-		messagesForPrompt = buildSubtree(conv, newUserMessageId);
+		// IMPORTANT: shallow copy messages so we don't mutate originals in conv.messages during injection/sanitization
+		messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 
 		// ============================================================================
 		// RAG INJECTION - Phase 1
@@ -323,55 +326,72 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			// Get tenant ID from session (Google user ID)
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
-			if (userQuery && tenantId) {
-				let rewriteQuery: string | undefined = undefined;
-				try {
-					// Attempt to rewrite query using history
-					// messagesForPrompt includes the current user message at the end
-					// We pass it to the rewriter which handles slicing history
-					console.log("[RAG][Phase2] Calling Query Rewriter");
+			if (conv.ragEnabled !== false && userQuery && tenantId) {
+				const { detectFileAnalysisShortcut } = await import("$lib/server/rag/queryRewriter");
 
-					// Build history WITHOUT current message (using parent messageId)
-					const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+				// 1. Check for Direct File Analysis Shortcut
+				const shortcutFileId = detectFileAnalysisShortcut(userQuery, availableFiles || []);
 
-					rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, { locals });
-					if (rewriteQuery === userQuery) rewriteQuery = undefined;
+				let ragResponse: import("$lib/rag/client").SemanticSearchResponse | undefined = undefined;
 
-					if (rewriteQuery) {
-						console.log("[RAG][Phase2] Original:", userQuery);
-						console.log("[RAG][Phase2] Rewritten:", rewriteQuery);
+				if (shortcutFileId) {
+					console.log(`[RAG] Using direct file shortcut for fileId: ${shortcutFileId}`);
+					const targetFile = (availableFiles || []).find((f) => f.id === shortcutFileId);
+					const isPdf = targetFile?.name.toLowerCase().endsWith(".pdf");
+
+					// Implement requested offset strategy: skip first 3 chunks (boilerplate) for PDFs
+					const offset = isPdf ? 3 : 0;
+
+					try {
+						ragResponse = await ragClient.getFileChunks(
+							shortcutFileId,
+							tenantId.toString(),
+							5,
+							offset
+						);
+					} catch (e) {
+						console.warn("[RAG] Direct file fetch failed, falling back to semantic search", e);
 					}
-				} catch (e) {
-					console.warn("[RAG] Rewrite failed, using original query", e);
 				}
 
-				console.log("[RAG] Attempting search for:", userQuery);
-				console.log("[RAG] Tenant ID:", tenantId);
+				// 2. Default Path: Rewrite + Semantic Search (only if shortcut didn't run or failed)
+				if (!ragResponse) {
+					let rewriteQuery: string | undefined = undefined;
+					try {
+						// Build history WITHOUT current message (using parent messageId)
+						const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
 
-				// Call backend RAG search
-				const ragResponse = await ragClient.semanticSearch(
-					{
-						messageId: newUserMessageId.toString(),
-						userQuery,
-						rewriteQuery,
-						top_k: 5, // Start conservative
-					},
-					tenantId.toString()
-				);
+						rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, {
+							locals,
+							availableFiles,
+						});
+						if (rewriteQuery === userQuery) rewriteQuery = undefined;
+					} catch (e) {
+						console.warn("[RAG] Rewrite failed, using original query", e);
+					}
 
-				console.log("[RAG] Retrieved chunks:", ragResponse.chunks.length);
+					// Call backend RAG search
+					ragResponse = await ragClient.semanticSearch(
+						{
+							messageId: newUserMessageId.toString(),
+							userQuery,
+							rewriteQuery,
+							top_k: 5,
+						},
+						tenantId.toString()
+					);
+				}
 
-				// If chunks found, inject context
-				if (ragResponse.chunks.length > 0) {
+				// If chunks found, inject context directly into the user message
+				if (ragResponse && ragResponse.chunks.length > 0) {
 					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
 
-					// Insert BEFORE user message (so LLM sees context first)
-					// messagesForPrompt is now: [...history, ragContext, userMessage]
-					messagesForPrompt.splice(messagesForPrompt.length - 1, 0, ragContextMessage);
-
-					console.log("[RAG] Context injected successfully");
-				} else {
-					console.log("[RAG] No relevant chunks found");
+					// Injection Strategy: Prefix the latest user message with context
+					// This is more robust than a separate system message for most models
+					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+					if (lastMsg && lastMsg.from === "user") {
+						lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+					}
 				}
 			}
 		} catch (error) {
@@ -391,6 +411,18 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	if (messagesForPrompt.length === 0) {
 		error(500, "Failed to create prompt");
 	}
+
+	// Sanitization: Strip <think> blocks from all history messages to prevent "thinking leakage"
+	messagesForPrompt = messagesForPrompt.map((msg, idx) => {
+		// Don't sanitize the very last message (it might contain the RAG context we just prefixed)
+		if (idx === messagesForPrompt.length - 1) return msg;
+
+		if (typeof msg.content === "string") {
+			const sanitized = msg.content.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
+			return { ...msg, content: sanitized };
+		}
+		return msg;
+	});
 
 	// update the conversation with the new messages
 	await collections.conversations.updateOne(
@@ -620,6 +652,8 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 				// Add billing organization to locals for the endpoint to use
 				locals.billingOrganization = userSettings?.billingOrganization;
+				// Add settings to locals for MCP tool injection
+				locals.settings = userSettings ?? undefined;
 
 				const ctx: TextGenerationContext = {
 					model,
@@ -759,6 +793,7 @@ export const PATCH: RequestHandler = async ({ request, locals, params }) => {
 		.object({
 			title: z.string().trim().min(1).max(100).optional(),
 			model: validModelIdSchema.optional(),
+			ragEnabled: z.boolean().optional(),
 		})
 		.parse(await request.json());
 
@@ -779,6 +814,7 @@ export const PATCH: RequestHandler = async ({ request, locals, params }) => {
 			title: values.title.replace(/<\/?think>/gi, "").trim(),
 		}),
 		...(values.model !== undefined && { model: values.model }),
+		...(values.ragEnabled !== undefined && { ragEnabled: values.ragEnabled }),
 	};
 
 	await collections.conversations.updateOne(

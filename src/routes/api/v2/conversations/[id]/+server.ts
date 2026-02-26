@@ -26,6 +26,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		updatedAt: conversation.updatedAt,
 		modelId: conversation.model,
 		shared: conversation.shared,
+		ragEnabled: conversation.ragEnabled !== false,
 	});
 };
 
@@ -54,6 +55,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const body = await request.json();
 	const title = body?.title as string | undefined;
 	const model = body?.model as string | undefined;
+	const ragEnabled = body?.ragEnabled as boolean | undefined;
 
 	if (title !== undefined) {
 		if (typeof title !== "string" || title.length === 0 || title.length > 100) {
@@ -72,6 +74,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 			title: title.replace(/<\/?think>/gi, "").trim(),
 		}),
 		...(model !== undefined && { model }),
+		...(ragEnabled !== undefined && { ragEnabled }),
 	};
 
 	const id = params.id ?? "";

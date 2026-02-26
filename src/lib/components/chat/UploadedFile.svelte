@@ -15,9 +15,10 @@
 		file: MessageFile;
 		canClose?: boolean;
 		onclose?: () => void;
+		ragFiles?: import("$lib/rag/client").RagFileMetadata[];
 	}
 
-	let { file, canClose = true, onclose }: Props = $props();
+	let { file, canClose = true, onclose, ragFiles = [] }: Props = $props();
 
 	let showModal = $state(false);
 
@@ -44,12 +45,21 @@
 	const isVideo = (mime: string) =>
 		mime.startsWith("video/") || mime === "mp4" || mime === "x-mpeg";
 
-	function matchesAllowed(contentType: string, allowed: readonly string[]): boolean {
+	function matchesAllowed(
+		contentType: string,
+		allowed: readonly string[],
+		fileName?: string
+	): boolean {
 		const ct = contentType.split(";")[0]?.trim().toLowerCase();
 		if (!ct) return false;
 		const [ctType, ctSubtype] = ct.split("/");
 		for (const a of allowed) {
+			if (a.startsWith(".")) {
+				if (fileName?.toLowerCase().endsWith(a.toLowerCase())) return true;
+				continue;
+			}
 			const [aType, aSubtype] = a.toLowerCase().split("/");
+			if (!aSubtype) continue;
 			const typeOk = aType === "*" || aType === ctType;
 			const subOk = aSubtype === "*" || aSubtype === ctSubtype;
 			if (typeOk && subOk) return true;
@@ -58,7 +68,19 @@
 	}
 
 	const isPlainText = (mime: string) =>
-		mime === "application/vnd.chatui.clipboard" || matchesAllowed(mime, TEXT_MIME_ALLOWLIST);
+		mime === "application/vnd.chatui.clipboard" ||
+		matchesAllowed(mime, TEXT_MIME_ALLOWLIST, file.name);
+
+	let isRagReady = $derived(
+		ragFiles.some(
+			(f) => f.name === file.name && f.finishEmbedding && !f.chunkingError && !f.embeddingError
+		)
+	);
+
+	let isIndexing = $derived(
+		!isRagReady &&
+			ragFiles.some((f) => f.name === file.name && !f.chunkingError && !f.embeddingError)
+	);
 
 	let isClickable = $derived(isImage(file.mime) || isPlainText(file.mime));
 </script>
@@ -188,6 +210,21 @@
 						<dt class="text-xs text-gray-400">Clipboard source</dt>
 					{:else}
 						<dt class="text-xs text-gray-400">{file.mime}</dt>
+					{/if}
+					{#if isRagReady}
+						<div
+							class="mt-0.5 flex items-center gap-1 overflow-hidden rounded bg-blue-500/10 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"
+						>
+							<span class="size-1 rounded-full bg-blue-500"></span>
+							RAG Ready
+						</div>
+					{:else if isIndexing}
+						<div
+							class="mt-0.5 flex items-center gap-1 overflow-hidden rounded bg-yellow-500/10 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-400"
+						>
+							<EosIconsLoading class="size-2 text-yellow-500" />
+							Indexing...
+						</div>
 					{/if}
 				</dl>
 			</div>

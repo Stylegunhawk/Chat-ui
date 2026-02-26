@@ -46,6 +46,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		toolsOverrides: settings?.toolsOverrides ?? {},
 		providerOverrides: settings?.providerOverrides ?? {},
 		billingOrganization: settings?.billingOrganization ?? undefined,
+		githubToken: settings?.githubToken ? "ghp_****" : null,
 	});
 };
 
@@ -68,8 +69,19 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			directPaste: z.boolean().default(false),
 			hidePromptExamples: z.record(z.boolean()).default({}),
 			billingOrganization: z.string().optional(),
+			githubToken: z.string().nullable().optional(),
 		})
 		.parse(body) satisfies SettingsEditable;
+
+	// Handle githubToken separately to avoid overwriting real token with masked placeholder
+	const shouldUnsetToken = settings.githubToken === null;
+	if (
+		settings.githubToken === "ghp_****" ||
+		settings.githubToken === "" ||
+		settings.githubToken === null
+	) {
+		delete settings.githubToken;
+	}
 
 	await collections.settings.updateOne(
 		authCondition(locals),
@@ -79,6 +91,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				...(welcomeModalSeen && { welcomeModalSeenAt: new Date() }),
 				updatedAt: new Date(),
 			},
+			...(shouldUnsetToken && { $unset: { githubToken: "" } }),
 			$setOnInsert: {
 				createdAt: new Date(),
 			},

@@ -1,119 +1,300 @@
 /**
- * Rewrites user queries using conversation context
+ * Rewrites user queries using conversation context and file awareness
  *
- * Example:
- * History: User asked about authentication, assistant explained login flow
- * Query: "fix that bug"
- * Rewritten: "fix authentication bug in login flow"
+ * Production-grade query rewriter for semantic search over code repositories.
+ * Preserves filenames, converts action verbs to searchable keywords,
+ * and resolves contextual references.
  */
 
 import type { Message } from "$lib/types/Message";
 import { generateFromDefaultEndpoint } from "$lib/server/generateFromDefaultEndpoint";
 
 interface RewriteOptions {
-	maxHistoryMessages?: number; // How many messages to include as context
+	maxHistoryMessages?: number;
 	locals?: App.Locals;
+	availableFiles?: Array<{ id: string; name: string }>; // Updated: include IDs
 }
 
 /**
- * Rewrite query using conversation history
- *
- * CRITICAL: Only use last N messages to avoid context overflow
+ * Detect if query explicitly mentions a filename
+ */
+function hasFilenameReference(query: string): boolean {
+	return /\w+\.(py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|hpp|rb|php|swift|kt|scala|md|txt|json|yaml|yml|toml|ini|cfg|conf|xml|html|css|scss|sql|sh|bash|dockerfile)\b/i.test(
+		query
+	);
+}
+
+/**
+ * Detect if query is a file-specific action (summarize, explain, etc.)
+ */
+function isFileActionRequest(query: string): boolean {
+	const actionVerbs = [
+		"summarize",
+		"summary",
+		"explain",
+		"describe",
+		"show me",
+		"what does",
+		"what is",
+		"tell me about",
+		"walk through",
+		"overview of",
+	];
+
+	return actionVerbs.some((verb) => query.toLowerCase().includes(verb));
+}
+
+/**
+ * Detect if query is already semantic-search friendly
+ */
+function isAlreadySearchFriendly(query: string): boolean {
+	// Technical queries with keywords don't need rewriting
+	const technicalPatterns = [
+		/\b(implementation|function|class|method|api|endpoint|database|query|algorithm)\b/i,
+		/\bhow (to|do|does)\b/i, // "how to" queries are usually good
+		/\b(bug|error|issue|problem|fix)\b.*\b(in|with)\b/i, // "bug in X" is specific
+	];
+
+	return technicalPatterns.some((pattern) => pattern.test(query));
+}
+
+/**
+ * Detect if user query is a direct request to analyze a specific file.
+ * Returns the fileId if a shortcut is detected, null otherwise.
+ */
+export function detectFileAnalysisShortcut(
+	query: string,
+	availableFiles: Array<{ id: string; name: string }>
+): string | null {
+	if (availableFiles.length === 0) return null;
+
+	// 1. Check if it's an analysis-intent request
+	if (!isFileActionRequest(query)) return null;
+
+	// 2. Check for matching filenames in the query
+	const lowerQuery = query.toLowerCase();
+
+	for (const file of availableFiles) {
+		const fileName = file.name.toLowerCase();
+		// Match exact filename or filename without extension
+		const nameParts = fileName.split(".");
+		const nameWithoutExt = nameParts.length > 1 ? nameParts.slice(0, -1).join(".") : fileName;
+
+		// Use word boundary check to avoid partial matches
+		const exactMatch = new RegExp(`\\b${fileName.replace(".", "\\.")}\\b`, "i").test(lowerQuery);
+		const baseMatch =
+			nameWithoutExt.length > 2 &&
+			new RegExp(`\\b${nameWithoutExt.replace(".", "\\.")}\\b`, "i").test(lowerQuery);
+
+		if (exactMatch || baseMatch) {
+			console.log(`[RAG] Shortcut detected (exact): ${file.name} (${file.id})`);
+			return file.id;
+		}
+
+		// 3. Fuzzy match: Check if keywords from filename exist as words in query
+		// Split by common separators and filter out small tokens
+		const tokens = nameWithoutExt.split(/[\s_\-.]+/).filter((t) => t.length > 3);
+		for (const token of tokens) {
+			if (new RegExp(`\\b${token}\\b`, "i").test(lowerQuery)) {
+				console.log(`[RAG] Shortcut detected (fuzzy token "${token}"): ${file.name} (${file.id})`);
+				return file.id;
+			}
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Rewrite query using conversation history and file context
  */
 export async function rewriteQueryWithHistory(
 	userQuery: string,
 	conversationHistory: Message[],
 	options: RewriteOptions = {}
 ): Promise<string> {
-	const { maxHistoryMessages = 3, locals } = options;
+	const { maxHistoryMessages = 3, locals, availableFiles = [] } = options;
 
-	// Skip rewriting for very short queries (likely greetings) or very long ones
+	// ============================================
+	// SKIP CONDITIONS (Don't rewrite if...)
+	// ============================================
+
+	// 1. Too short (greetings) or too long (already detailed)
 	if (userQuery.length < 5 || userQuery.length > 500) {
+		console.log("[RAG] Skip: Query length out of range");
 		return userQuery;
 	}
 
-	// Get recent context (last N messages)
+	// 2. File-specific action requests (preserve for exact matching)
+	if (hasFilenameReference(userQuery) && isFileActionRequest(userQuery)) {
+		console.log("[RAG] Skip: File-specific action request");
+		return userQuery;
+	}
+
+	// 3. Already semantic-search friendly
+	if (isAlreadySearchFriendly(userQuery)) {
+		console.log("[RAG] Skip: Query already search-friendly");
+		return userQuery;
+	}
+
+	// 4. No conversation history (nothing to contextualize)
 	const recentHistory = conversationHistory
-		.filter((msg) => msg.from !== "system") // Filter system prompts
+		.filter((msg) => msg.from !== "system")
 		.slice(-maxHistoryMessages);
 
-	// If no history, nothing to rewrite based on
 	if (recentHistory.length === 0) {
+		console.log("[RAG] Skip: No conversation history");
 		return userQuery;
 	}
 
-	// Build context string
+	// ============================================
+	// BUILD CONTEXT
+	// ============================================
+
 	const contextStr = recentHistory
-		.map((msg) => `${msg.from}: ${msg.content.substring(0, 300)}`)
+		.map((msg) => {
+			const preview = msg.content.substring(0, 300);
+			// Strip <think> blocks from history context
+			const cleaned = preview.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+			return `${msg.from}: ${cleaned}`;
+		})
 		.join("\n");
 
+	// Build file context (if available)
+	const fileContext =
+		availableFiles.length > 0
+			? `\n\nAvailable files (FOR CONTEXT ONLY to resolve ambiguous references like 'this file' or 'the app file'):\n${availableFiles
+					.slice(0, 20)
+					.map((f) => f.name)
+					.join(", ")}`
+			: "";
+
+	// ============================================
+	// LLM REWRITE
+	// ============================================
+
 	try {
-		// Call LLM to rewrite
+		console.log("[RAG][Phase2] Calling Query Rewriter");
+		console.log("[RAG][Phase2] Original:", userQuery);
+
 		const generator = generateFromDefaultEndpoint({
 			messages: [
 				{
 					from: "user",
-					content: `Given this conversation history:
+					content: `Conversation context:
+${contextStr}${fileContext}
 
-${contextStr}
+User's current query: "${userQuery}"
 
-The user just asked: "${userQuery}"
-
-        Task:
-        Rewrite the query so it is self-contained and unambiguous for vector search.
-        If no rewrite is needed, return the original query verbatim.
-        Output MUST be 5–20 words.`,
+Task: Rewrite this query for semantic code search. Make it self-contained and keyword-rich.`,
 				},
 			],
-			preprompt: `
-      You are a query rewriter for a semantic search system.
+			preprompt: `You are a query optimizer for semantic search over code repositories.
 
-        STRICT RULES:
-        - Do NOT include reasoning
-        - Do NOT include explanations
-        - Do NOT include <think> blocks
-        - Do NOT include analysis
-        - Output ONLY the rewritten query as plain text
-        - One single sentence
-        - No quotes
+CRITICAL RULES:
+1. Resolve pronouns and ambiguous references using context or file list.
+   - "this file" → "config" (if context or file list has config.py)
+2. NEVER include filenames or file extensions (like .pdf, .js, .py) in the output.
+3. Convert action verbs to content keywords:
+   - "summarize X" → "X overview implementation functionality"
+   - "explain Y" → "Y purpose logic behavior"
+   - "what does Z do" → "Z functionality operations"
+3. Resolve pronouns using conversation context:
+   - "that bug" → "authentication bug" (if context mentions auth)
+   - "this file" → "config.py" (if context mentions config.py)
+4. Add technical keywords from context (function names, concepts)
+5. Keep output 5-25 words
 
-        RULES:
-        - Rewrite ONLY if the query depends on previous context.
-        - If the query is already clear, return it EXACTLY unchanged.
-        - Resolve references like "above", "this", "that", "it".
-        - Do NOT add explanations or extra details.
-        - Output MUST be 5–20 words.
-        - Output length MUST be similar to the input length.
-        - Output ONLY the rewritten query text.`,
+OUTPUT FORMAT:
+- Plain text only (no quotes, no reasoning, no <think> blocks)
+- One sentence
+- Length similar to input
+
+EXAMPLES:
+Input: "summarize auth.py"
+Output: "authentication login user validation implementation"
+
+Input: "what does that function do?" (after discussing validateUser)
+Output: "validateUser function authentication logic behavior"
+
+Input: "fix the bug we discussed" (after discussing SQL injection)
+Output: "SQL injection bug database query sanitization fix"
+
+Now rewrite the query above:`,
 			locals,
 			modelId: "gpt-oss:20b-cloud",
 		});
 
-		// We need to iterate the generator to completion to get the return value (the full text)
-		// The yielded values are just stream updates which we ignore
+		// Execute generator
 		let result = await generator.next();
 		while (!result.done) {
 			result = await generator.next();
 		}
 		const rewritten = result.value;
 
+		// ============================================
+		// POST-PROCESSING
+		// ============================================
+
 		const cleaned = rewritten
-			.replace(/<think>[\s\S]*?<\/think>/gi, "") // REMOVE reasoning
-			.replace(/^\s+|\s+$/g, "")
-			.replace(/^["']|["']$/g, "");
+			.replace(/<think>[\s\S]*?<\/think>/gi, "") // Remove reasoning
+			.replace(/^["'`]+|["'`]+$/g, "") // Remove quotes
+			.replace(/^\s+|\s+$/g, "") // Trim
+			.replace(/^(rewritten query:|query:)/i, "") // Remove prefixes
+			// Safety net: Strip anything that looks like a filename (token ending in common extensions)
+			.replace(
+				/\b\w+\.(py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|hpp|rb|php|swift|kt|scala|md|txt|json|yaml|yml|toml|ini|cfg|conf|xml|html|css|scss|sql|sh|bash|dockerfile|pdf)\b/gi,
+				""
+			)
+			.replace(/\s+/g, " ") // Collapse spaces after removals
+			.trim();
 
 		console.log("[RAG][Phase2] Generated Query:", cleaned);
 
-		// Validation: Don't return if too similar or too long
-		// If rewrite is insanely long, it might be hallucinating
-		if (cleaned.length === 0 || cleaned.length > Math.max(120, userQuery.length * 3)) {
-			console.warn("[RAG] Rewrite rejected, using original");
+		// ============================================
+		// VALIDATION
+		// ============================================
+
+		// Reject if empty or suspiciously long (hallucination)
+		if (cleaned.length === 0) {
+			console.warn("[RAG] Rewrite rejected: empty output");
 			return userQuery;
 		}
 
+		if (cleaned.length > Math.max(150, userQuery.length * 4)) {
+			console.warn("[RAG] Rewrite rejected: too long (hallucination?)");
+			return userQuery;
+		}
+
+		// Reject if model just repeated the input verbatim
+		if (cleaned.toLowerCase() === userQuery.toLowerCase()) {
+			console.log("[RAG] Rewrite skipped: identical to input");
+			return userQuery;
+		}
+
+		console.log("[RAG][Phase2] Rewrite accepted");
 		return cleaned;
 	} catch (error) {
 		console.warn("[RAG] Query rewrite failed:", error);
-		return userQuery; // Fallback to original
+		return userQuery; // Always fallback gracefully
+	}
+}
+
+/**
+ * Get list of user's uploaded files for query context
+ * @deprecated Use rewriteQueryWithHistory and pass files from the frontend instead.
+ */
+export async function getUserUploadedFiles(
+	tenantId: string,
+	ragClient: {
+		listFiles: (tenantId: string) => Promise<import("$lib/rag/client").RagFileMetadata[]>;
+	}
+): Promise<string[]> {
+	try {
+		const files = await ragClient.listFiles(tenantId);
+		return files.map((f) => f.name).filter(Boolean);
+	} catch (error) {
+		console.warn("[RAG] Failed to fetch file list:", error);
+		return [];
 	}
 }

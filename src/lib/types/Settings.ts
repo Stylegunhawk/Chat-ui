@@ -48,6 +48,12 @@ export interface Settings extends Timestamps {
 	 * Stores the org's preferred_username. If empty/undefined, bills to personal account.
 	 */
 	billingOrganization?: string;
+
+	/**
+	 * GitHub Personal Access Token for MCP github_operation tool.
+	 * Stored securely and injected only into github_operation tool calls.
+	 */
+	githubToken?: string | null;
 }
 
 export type SettingsEditable = Omit<Settings, "welcomeModalSeenAt" | "createdAt" | "updatedAt">;

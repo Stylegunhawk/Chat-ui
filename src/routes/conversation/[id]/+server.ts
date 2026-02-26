@@ -165,7 +165,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					})
 				)
 			),
-			availableFiles: z.optional(z.array(z.string())),
+			availableFiles: z.optional(z.array(z.object({ id: z.string(), name: z.string() }))),
 		})
 		.parse(JSON.parse(json));
 
@@ -327,33 +327,63 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
 			if (conv.ragEnabled !== false && userQuery && tenantId) {
-				let rewriteQuery: string | undefined = undefined;
-				try {
-					// Build history WITHOUT current message (using parent messageId)
-					const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+				const { detectFileAnalysisShortcut } = await import("$lib/server/rag/queryRewriter");
 
-					rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, {
-						locals,
-						availableFiles,
-					});
-					if (rewriteQuery === userQuery) rewriteQuery = undefined;
-				} catch (e) {
-					console.warn("[RAG] Rewrite failed, using original query", e);
+				// 1. Check for Direct File Analysis Shortcut
+				const shortcutFileId = detectFileAnalysisShortcut(userQuery, availableFiles || []);
+
+				let ragResponse: import("$lib/rag/client").SemanticSearchResponse | undefined = undefined;
+
+				if (shortcutFileId) {
+					console.log(`[RAG] Using direct file shortcut for fileId: ${shortcutFileId}`);
+					const targetFile = (availableFiles || []).find((f) => f.id === shortcutFileId);
+					const isPdf = targetFile?.name.toLowerCase().endsWith(".pdf");
+
+					// Implement requested offset strategy: skip first 3 chunks (boilerplate) for PDFs
+					const offset = isPdf ? 3 : 0;
+
+					try {
+						ragResponse = await ragClient.getFileChunks(
+							shortcutFileId,
+							tenantId.toString(),
+							5,
+							offset
+						);
+					} catch (e) {
+						console.warn("[RAG] Direct file fetch failed, falling back to semantic search", e);
+					}
 				}
 
-				// Call backend RAG search
-				const ragResponse = await ragClient.semanticSearch(
-					{
-						messageId: newUserMessageId.toString(),
-						userQuery,
-						rewriteQuery,
-						top_k: 5,
-					},
-					tenantId.toString()
-				);
+				// 2. Default Path: Rewrite + Semantic Search (only if shortcut didn't run or failed)
+				if (!ragResponse) {
+					let rewriteQuery: string | undefined = undefined;
+					try {
+						// Build history WITHOUT current message (using parent messageId)
+						const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+
+						rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, {
+							locals,
+							availableFiles,
+						});
+						if (rewriteQuery === userQuery) rewriteQuery = undefined;
+					} catch (e) {
+						console.warn("[RAG] Rewrite failed, using original query", e);
+					}
+
+					// Call backend RAG search
+					ragResponse = await ragClient.semanticSearch(
+						{
+							messageId: newUserMessageId.toString(),
+							userQuery,
+							rewriteQuery,
+							top_k: 5,
+						},
+						tenantId.toString()
+					);
+				}
 
 				// If chunks found, inject context directly into the user message
-				if (ragResponse.chunks.length > 0) {
+				if (ragResponse && ragResponse.chunks.length > 0) {
 					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
 
 					// Injection Strategy: Prefix the latest user message with context

@@ -229,7 +229,7 @@
 						url: s.url,
 						headers: s.headers,
 					})),
-					availableFiles: ragFiles.map((f) => f.name),
+					availableFiles: ragFiles.map((f) => ({ id: f.id, name: f.name })),
 				},
 				messageUpdatesAbortController.signal
 			).catch((err) => {

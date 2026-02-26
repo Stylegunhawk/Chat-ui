@@ -120,6 +120,28 @@ export async function* executeToolCalls({
 				github_token: locals.settings.githubToken,
 			};
 		}
+
+		// Normalize generate_data fields (GPT-OSS often sends objects instead of strings)
+		if (mappingEntry?.tool === "generate_data") {
+			const fields = p.argsObj.fields;
+			if (Array.isArray(fields)) {
+				p.argsObj.fields = fields.map((item) => {
+					if (typeof item === "object" && item !== null) {
+						const obj = item as Record<string, unknown>;
+						if ("name" in obj && typeof obj.name === "string") {
+							return obj.name;
+						}
+						return Object.keys(obj)[0];
+					}
+					return String(item);
+				});
+				// Refresh paramsClean for logging/UI
+				for (const [k, v] of Object.entries(p.argsObj)) {
+					const prim = toPrimitive(v);
+					if (prim !== undefined) p.paramsClean[k] = prim;
+				}
+			}
+		}
 	}
 
 	for (const p of prepared) {

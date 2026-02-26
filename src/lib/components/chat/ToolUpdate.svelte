@@ -13,6 +13,7 @@
 	import { page } from "$app/state";
 	import CarbonChevronRight from "~icons/carbon/chevron-right";
 	import BlockWrapper from "./BlockWrapper.svelte";
+	import { getToolRenderer } from "./tools/registry";
 
 	interface Props {
 		tool: MessageToolUpdate[];
@@ -110,6 +111,19 @@
 	let iconRing = $derived(
 		toolError ? "ring-red-200 dark:ring-red-500/30" : "ring-purple-200 dark:ring-purple-500/30"
 	);
+
+	let elapsedSeconds = $state(0);
+	$effect(() => {
+		if (isExecuting && toolFnName === "generate_data") {
+			const start = Date.now();
+			const interval = setInterval(() => {
+				elapsedSeconds = (Date.now() - start) / 1000;
+			}, 100);
+			return () => clearInterval(interval);
+		} else {
+			elapsedSeconds = 0;
+		}
+	});
 </script>
 
 {#snippet icon()}
@@ -149,6 +163,27 @@
 				</span>
 				{#if isExecuting && toolProgress}
 					<span class="text-xs text-gray-500 dark:text-gray-400">{progressLabel}</span>
+				{:else if isExecuting && toolFnName === "generate_data"}
+					{@const elapsed = elapsedSeconds}
+					{@const progress = Math.min(elapsed / 90, 0.99)}
+					{@const stageLabel =
+						elapsed < 30
+							? "Designing schema..."
+							: elapsed < 60
+								? "Analyzing fields..."
+								: "Generating rows..."}
+					<div class="mt-1 flex w-full flex-col gap-1.5 pr-4">
+						<div class="flex items-center justify-between text-[10px] text-gray-400">
+							<span>{stageLabel}</span>
+							<span>{Math.round(progress * 100)}%</span>
+						</div>
+						<div class="h-1 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+							<div
+								class="h-full bg-purple-500 transition-all duration-300 ease-out"
+								style:width="{progress * 100}%"
+							></div>
+						</div>
+					</div>
 				{/if}
 			</button>
 
@@ -197,60 +232,65 @@
 							</div>
 						</div>
 					{:else if isMessageToolResultUpdate(update) && update.result.status === ToolResultStatus.Success && update.result.display}
-						<div class="space-y-1">
-							<div class="flex items-center gap-2">
-								<div
-									class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
-								>
-									Output
-								</div>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									width="12"
-									height="12"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									class="text-emerald-500"
-								>
-									<circle cx="12" cy="12" r="10"></circle>
-									<path d="m9 12 2 2 4-4"></path>
-								</svg>
-							</div>
-							<div
-								class="scrollbar-custom rounded-md border border-gray-100 bg-white p-2 text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400"
-							>
-								{#each parseToolOutputs(update.result.outputs) as parsedOutput}
-									<div class="space-y-2">
-										{#if parsedOutput.text}
-											<pre
-												class="scrollbar-custom max-h-60 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs">{parsedOutput.text}</pre>
-										{/if}
-
-										{#if parsedOutput.images.length > 0}
-											<div class="flex flex-wrap gap-2">
-												{#each parsedOutput.images as image, imageIndex}
-													<img
-														alt={`Tool result image ${imageIndex + 1}`}
-														class="max-h-60 cursor-pointer rounded border border-gray-200 dark:border-gray-700"
-														src={`data:${image.mimeType};base64,${image.data}`}
-													/>
-												{/each}
-											</div>
-										{/if}
-
-										{#if parsedOutput.metadata.length > 0}
-											<pre class="whitespace-pre-wrap break-all font-mono text-xs">{formatValue(
-													Object.fromEntries(parsedOutput.metadata)
-												)}</pre>
-										{/if}
+						{@const CustomRenderer = toolFnName ? getToolRenderer(toolFnName) : null}
+						{#if CustomRenderer}
+							<CustomRenderer {update} {parseToolOutputs} {formatValue} />
+						{:else}
+							<div class="space-y-1">
+								<div class="flex items-center gap-2">
+									<div
+										class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+									>
+										Output
 									</div>
-								{/each}
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="12"
+										height="12"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										class="text-emerald-500"
+									>
+										<circle cx="12" cy="12" r="10"></circle>
+										<path d="m9 12 2 2 4-4"></path>
+									</svg>
+								</div>
+								<div
+									class="scrollbar-custom rounded-md border border-gray-100 bg-white p-2 text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400"
+								>
+									{#each parseToolOutputs(update.result.outputs) as parsedOutput}
+										<div class="space-y-2">
+											{#if parsedOutput.text}
+												<pre
+													class="scrollbar-custom max-h-60 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs">{parsedOutput.text}</pre>
+											{/if}
+
+											{#if parsedOutput.images.length > 0}
+												<div class="flex flex-wrap gap-2">
+													{#each parsedOutput.images as image, imageIndex}
+														<img
+															alt={`Tool result image ${imageIndex + 1}`}
+															class="max-h-60 cursor-pointer rounded border border-gray-200 dark:border-gray-700"
+															src={`data:${image.mimeType};base64,${image.data}`}
+														/>
+													{/each}
+												</div>
+											{/if}
+
+											{#if parsedOutput.metadata.length > 0}
+												<pre class="whitespace-pre-wrap break-all font-mono text-xs">{formatValue(
+														Object.fromEntries(parsedOutput.metadata)
+													)}</pre>
+											{/if}
+										</div>
+									{/each}
+								</div>
 							</div>
-						</div>
+						{/if}
 					{:else if isMessageToolResultUpdate(update) && update.result.status === ToolResultStatus.Error && update.result.display}
 						<div class="space-y-1">
 							<div

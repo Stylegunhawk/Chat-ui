@@ -109,6 +109,36 @@ export class RAGClient {
 
 		return await response.json();
 	}
+	/**
+	 * Get chunks for a specific file
+	 */
+	async getFileChunks(
+		fileId: string,
+		tenantId: string,
+		limit: number = 5,
+		offset: number = 0
+	): Promise<SemanticSearchResponse> {
+		const response = await fetch(
+			`${this.baseUrl}/api/v1/rag/file/${fileId}/chunks?limit=${limit}&offset=${offset}`,
+			{
+				headers: {
+					"X-User-ID": tenantId,
+				},
+			}
+		);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Failed to fetch file chunks: ${response.status} ${errorText}`);
+		}
+
+		// Backend might return chunks array directly or wrapped in SemanticSearchResponse
+		const data = await response.json();
+		if (Array.isArray(data)) {
+			return { chunks: data, queryId: `file_${fileId}` };
+		}
+		return data;
+	}
 
 	/**
 	 * List all files for a tenant

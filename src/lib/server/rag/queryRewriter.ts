@@ -12,7 +12,7 @@ import { generateFromDefaultEndpoint } from "$lib/server/generateFromDefaultEndp
 interface RewriteOptions {
 	maxHistoryMessages?: number;
 	locals?: App.Locals;
-	availableFiles?: string[]; // NEW: List of uploaded filenames
+	availableFiles?: Array<{ id: string; name: string }>; // Updated: include IDs
 }
 
 /**
@@ -56,6 +56,53 @@ function isAlreadySearchFriendly(query: string): boolean {
 	];
 
 	return technicalPatterns.some((pattern) => pattern.test(query));
+}
+
+/**
+ * Detect if user query is a direct request to analyze a specific file.
+ * Returns the fileId if a shortcut is detected, null otherwise.
+ */
+export function detectFileAnalysisShortcut(
+	query: string,
+	availableFiles: Array<{ id: string; name: string }>
+): string | null {
+	if (availableFiles.length === 0) return null;
+
+	// 1. Check if it's an analysis-intent request
+	if (!isFileActionRequest(query)) return null;
+
+	// 2. Check for matching filenames in the query
+	const lowerQuery = query.toLowerCase();
+
+	for (const file of availableFiles) {
+		const fileName = file.name.toLowerCase();
+		// Match exact filename or filename without extension
+		const nameParts = fileName.split(".");
+		const nameWithoutExt = nameParts.length > 1 ? nameParts.slice(0, -1).join(".") : fileName;
+
+		// Use word boundary check to avoid partial matches
+		const exactMatch = new RegExp(`\\b${fileName.replace(".", "\\.")}\\b`, "i").test(lowerQuery);
+		const baseMatch =
+			nameWithoutExt.length > 2 &&
+			new RegExp(`\\b${nameWithoutExt.replace(".", "\\.")}\\b`, "i").test(lowerQuery);
+
+		if (exactMatch || baseMatch) {
+			console.log(`[RAG] Shortcut detected (exact): ${file.name} (${file.id})`);
+			return file.id;
+		}
+
+		// 3. Fuzzy match: Check if keywords from filename exist as words in query
+		// Split by common separators and filter out small tokens
+		const tokens = nameWithoutExt.split(/[\s_\-.]+/).filter((t) => t.length > 3);
+		for (const token of tokens) {
+			if (new RegExp(`\\b${token}\\b`, "i").test(lowerQuery)) {
+				console.log(`[RAG] Shortcut detected (fuzzy token "${token}"): ${file.name} (${file.id})`);
+				return file.id;
+			}
+		}
+	}
+
+	return null;
 }
 
 /**
@@ -116,7 +163,10 @@ export async function rewriteQueryWithHistory(
 	// Build file context (if available)
 	const fileContext =
 		availableFiles.length > 0
-			? `\n\nUser's uploaded files:\n${availableFiles.slice(0, 20).join(", ")}`
+			? `\n\nAvailable files (FOR CONTEXT ONLY to resolve ambiguous references like 'this file' or 'the app file'):\n${availableFiles
+					.slice(0, 20)
+					.map((f) => f.name)
+					.join(", ")}`
 			: "";
 
 	// ============================================
@@ -142,8 +192,10 @@ Task: Rewrite this query for semantic code search. Make it self-contained and ke
 			preprompt: `You are a query optimizer for semantic search over code repositories.
 
 CRITICAL RULES:
-1. If query mentions a filename (e.g., "auth.py"), PRESERVE the exact filename
-2. Convert action verbs to content keywords:
+1. Resolve pronouns and ambiguous references using context or file list.
+   - "this file" → "config" (if context or file list has config.py)
+2. NEVER include filenames or file extensions (like .pdf, .js, .py) in the output.
+3. Convert action verbs to content keywords:
    - "summarize X" → "X overview implementation functionality"
    - "explain Y" → "Y purpose logic behavior"
    - "what does Z do" → "Z functionality operations"
@@ -160,7 +212,7 @@ OUTPUT FORMAT:
 
 EXAMPLES:
 Input: "summarize auth.py"
-Output: "auth.py authentication login user validation implementation"
+Output: "authentication login user validation implementation"
 
 Input: "what does that function do?" (after discussing validateUser)
 Output: "validateUser function authentication logic behavior"
@@ -189,6 +241,12 @@ Now rewrite the query above:`,
 			.replace(/^["'`]+|["'`]+$/g, "") // Remove quotes
 			.replace(/^\s+|\s+$/g, "") // Trim
 			.replace(/^(rewritten query:|query:)/i, "") // Remove prefixes
+			// Safety net: Strip anything that looks like a filename (token ending in common extensions)
+			.replace(
+				/\b\w+\.(py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|hpp|rb|php|swift|kt|scala|md|txt|json|yaml|yml|toml|ini|cfg|conf|xml|html|css|scss|sql|sh|bash|dockerfile|pdf)\b/gi,
+				""
+			)
+			.replace(/\s+/g, " ") // Collapse spaces after removals
 			.trim();
 
 		console.log("[RAG][Phase2] Generated Query:", cleaned);
@@ -211,15 +269,6 @@ Now rewrite the query above:`,
 		// Reject if model just repeated the input verbatim
 		if (cleaned.toLowerCase() === userQuery.toLowerCase()) {
 			console.log("[RAG] Rewrite skipped: identical to input");
-			return userQuery;
-		}
-
-		// Reject if filename was lost (critical for file-specific queries)
-		const originalHadFilename = hasFilenameReference(userQuery);
-		const rewrittenHasFilename = hasFilenameReference(cleaned);
-
-		if (originalHadFilename && !rewrittenHasFilename) {
-			console.warn("[RAG] Rewrite rejected: lost filename reference");
 			return userQuery;
 		}
 

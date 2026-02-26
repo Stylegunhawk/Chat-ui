@@ -273,7 +273,7 @@
 
 	// Force scroll to bottom when user sends a new message
 	// Pattern: user message + empty assistant message are added together
-	let prevMessageCount = $state(messages.length);
+	let prevMessageCount = messages.length;
 	let forceReattach = $state(0);
 	$effect(() => {
 		if (messages.length > prevMessageCount) {

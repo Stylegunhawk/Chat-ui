@@ -14,6 +14,7 @@ import {
 import { getClient } from "$lib/server/mcp/clientPool";
 import { attachFileRefsToArgs, type FileRefResolver } from "./fileRefs";
 import type { Client } from "@modelcontextprotocol/sdk/client";
+import { createConfirmation } from "../../mcp/confirmationBuffer";
 
 export type Primitive = string | number | boolean;
 
@@ -279,6 +280,41 @@ export async function* executeToolCalls({
 				{ server: mappingEntry.server, tool: mappingEntry.tool, parameters: p.paramsClean },
 				"[mcp] invoking tool"
 			);
+
+			// GitHub Operation Confirmation Logic
+			const isGithubOperation = mappingEntry.tool === "github_operation";
+			const query = String(p.paramsClean.query ?? "").toLowerCase();
+			const destructiveKeywords = ["commit", "delete", "merge", "branch", "push", "update"];
+			const isDestructive = destructiveKeywords.some((kw) => query.includes(kw));
+
+			if (isGithubOperation && isDestructive) {
+				const operation = destructiveKeywords.find((kw) => query.includes(kw)) as
+					| "commit"
+					| "delete"
+					| "merge"
+					| "branch"
+					| "push"
+					| "update";
+
+				updatesQueue.push({
+					type: MessageUpdateType.Tool,
+					subtype: MessageToolUpdateType.Confirm,
+					uuid: p.uuid,
+					operation,
+					repoName: String(p.paramsClean.repo_name ?? ""),
+					filePath: String(p.paramsClean.file_path ?? ""),
+					content: String(p.paramsClean.content ?? ""),
+					commitMessage: String(p.paramsClean.commit_message ?? ""),
+					branchName: String(p.paramsClean.branch_name ?? p.paramsClean.head_branch ?? ""),
+					sourceBranch: String(p.paramsClean.source_branch ?? p.paramsClean.base_branch ?? ""),
+				});
+
+				const { action } = await createConfirmation(p.uuid);
+				if (action === "reject") {
+					throw new Error("Operation cancelled by user");
+				}
+			}
+
 			const toolResponse: McpToolTextResponse = await callMcpTool(
 				serverCfg,
 				mappingEntry.tool,

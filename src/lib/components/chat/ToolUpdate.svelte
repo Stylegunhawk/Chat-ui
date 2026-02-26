@@ -5,6 +5,7 @@
 		isMessageToolErrorUpdate,
 		isMessageToolProgressUpdate,
 		isMessageToolResultUpdate,
+		isMessageToolConfirmUpdate,
 	} from "$lib/utils/messageUpdates";
 	import { formatToolProgressLabel } from "$lib/utils/toolProgress";
 	import LucideHammer from "~icons/lucide/hammer";
@@ -14,6 +15,7 @@
 	import CarbonChevronRight from "~icons/carbon/chevron-right";
 	import BlockWrapper from "./BlockWrapper.svelte";
 	import { getToolRenderer } from "./tools/registry";
+	import ToolConfirmCard from "./ToolConfirmCard.svelte";
 
 	interface Props {
 		tool: MessageToolUpdate[];
@@ -218,6 +220,8 @@
 									)}</pre>
 							</div>
 						</div>
+					{:else if isMessageToolConfirmUpdate(update)}
+						<ToolConfirmCard confirm={update} disabled={!isExecuting} />
 					{:else if update.subtype === MessageToolUpdateType.Error}
 						<div class="space-y-1">
 							<div

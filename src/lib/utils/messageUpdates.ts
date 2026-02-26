@@ -273,6 +273,11 @@ export const isMessageToolProgressUpdate = (
 ): update is MessageToolProgressUpdate =>
 	isMessageToolUpdate(update) && update.subtype === MessageToolUpdateType.Progress;
 
+export const isMessageToolConfirmUpdate = (
+	update: MessageUpdate
+): update is MessageToolConfirmUpdate =>
+	isMessageToolUpdate(update) && update.subtype === MessageToolUpdateType.Confirm;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitForEvent = (eventTarget: EventTarget, eventName: string) =>
 	new Promise<boolean>((resolve) =>

@@ -101,12 +101,18 @@
 		}
 	});
 
-	let previewLines = $derived(
-		confirm.content
-			?.split("\n")
-			.slice(0, 8)
-			.map((line) => line) || []
-	);
+	let previewLines = $derived.by(() => {
+		if (confirm.content && confirm.content.trim()) {
+			return confirm.content
+				.split("\n")
+				.slice(0, 8)
+				.map((line) => line);
+		}
+		if (confirm.query && confirm.query.trim()) {
+			return [confirm.query];
+		}
+		return [];
+	});
 
 	let repoBasename = $derived(confirm.repoName.split("/").pop() || confirm.repoName);
 
@@ -114,7 +120,7 @@
 </script>
 
 <div
-	class="mt-2 flex flex-col gap-2 rounded-lg border border-l-4 border-gray-100 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 {config.accent} {disabled &&
+	class="mt-2 flex flex-col gap-2 rounded-md border border-l-4 border-gray-100 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800/50 {config.accent} {disabled &&
 	!isProcessed
 		? 'pointer-events-none opacity-50 grayscale'
 		: ''}"
@@ -145,8 +151,10 @@
 			<span class="truncate">{repoBasename}</span>
 		</div>
 	{:else}
-		<div class="flex items-center gap-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
-			<span class="opacity-70">{repoBasename}</span>
+		<div
+			class="flex items-center gap-1 truncate text-[11px] text-gray-500 opacity-80 dark:text-gray-400"
+		>
+			<span class="font-medium">{repoBasename || "Githops Repo"}</span>
 			{#if confirm.filePath}
 				<span class="opacity-30">/</span>
 				<span>{confirm.filePath}</span>
@@ -154,11 +162,11 @@
 		</div>
 	{/if}
 
-	<div class="text-[12px] text-gray-600 dark:text-gray-300">
+	<div class="text-[12px] leading-snug text-gray-600 dark:text-gray-300">
 		{config.description}
 	</div>
 
-	{#if confirm.operation === "commit" && previewLines.length > 0}
+	{#if previewLines.length > 0}
 		<div
 			class="mt-1 overflow-hidden rounded border border-gray-100 bg-gray-50/50 dark:border-gray-700/50 dark:bg-gray-900/40"
 		>
@@ -167,7 +175,9 @@
 					<div
 						class="flex border-b border-gray-50 px-2 py-0.5 last:border-0 dark:border-gray-700/20"
 					>
-						<span class="mr-2 flex-shrink-0 text-green-600">+</span>
+						<span class="mr-2 flex-shrink-0 text-green-600"
+							>{confirm.operation === "commit" ? "+" : "•"}</span
+						>
 						<span class="truncate text-gray-700 dark:text-gray-400">{line}</span>
 					</div>
 				{/each}

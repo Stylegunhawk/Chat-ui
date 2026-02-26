@@ -304,6 +304,7 @@ export async function* executeToolCalls({
 					repoName: String(p.paramsClean.repo_name ?? ""),
 					filePath: String(p.paramsClean.file_path ?? ""),
 					content: String(p.paramsClean.content ?? ""),
+					query: p.paramsClean.query ? String(p.paramsClean.query) : undefined,
 					commitMessage: String(p.paramsClean.commit_message ?? ""),
 					branchName: String(p.paramsClean.branch_name ?? p.paramsClean.head_branch ?? ""),
 					sourceBranch: String(p.paramsClean.source_branch ?? p.paramsClean.base_branch ?? ""),

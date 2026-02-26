@@ -93,6 +93,7 @@ export interface MessageToolConfirmUpdate
 	repoName: string;
 	filePath?: string;
 	content?: string;
+	query?: string;
 	commitMessage?: string;
 	branchName?: string;
 	sourceBranch?: string;

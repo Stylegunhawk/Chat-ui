@@ -17,27 +17,44 @@
 
 	let { update, parseToolOutputs, formatValue }: Props = $props();
 
+	function tryParseJson(text: string) {
+		try {
+			// Try full string first
+			return JSON.parse(text);
+		} catch {
+			// Find first '{' and last '}'
+			const start = text.indexOf("{");
+			const end = text.lastIndexOf("}");
+			if (start !== -1 && end !== -1 && end > start) {
+				try {
+					return JSON.parse(text.substring(start, end + 1));
+				} catch {
+					return null;
+				}
+			}
+		}
+		return null;
+	}
+
 	// Parse tool output
 	const toolOutput = $derived.by(() => {
 		if (update.result.status !== ToolResultStatus.Success) return null;
-		// Typically generate_data returns one main output in the array
-		const firstOutput = update.result.outputs[0];
-		if (!firstOutput) return null;
 
-		// The raw data is usually in a 'data' field since MCP tools wrap results
-		// If it's already a parsed object in the output, use it
-		const data = firstOutput.data as Record<string, unknown>;
-		if (data?.entities && data?.data) {
-			return data;
-		}
-		// Fallback: check if 'text' contains a JSON string
-		if (typeof firstOutput.text === "string") {
-			try {
-				const parsed = JSON.parse(firstOutput.text);
-				if (parsed.success && parsed.data) return parsed.data;
-				return parsed;
-			} catch {
-				return null;
+		for (const output of update.result.outputs) {
+			const data = output.data as any;
+			// If already structured and has expected fields
+			if (data?.entities && data?.data) return data;
+			if (data?.success && data?.data?.entities) return data.data;
+
+			// If text output, try parsing
+			if (typeof output.text === "string") {
+				const parsed = tryParseJson(output.text) as any;
+				if (parsed) {
+					// Handle nesting: { success: true, data: { entities: [], data: {} } }
+					if (parsed.success && parsed.data?.entities) return parsed.data;
+					// Handle direct: { entities: [], data: {} }
+					if (parsed.entities && parsed.data) return parsed;
+				}
 			}
 		}
 		return null;
@@ -54,7 +71,7 @@
 		}
 	});
 
-	let currentRows = $derived(toolOutput?.data?.[activeEntity] ?? []);
+	let currentRows = $derived((toolOutput?.data as any)?.[activeEntity] ?? []);
 	let columns = $derived.by(() => {
 		if (currentRows.length === 0) return [];
 		return Object.keys(currentRows[0]);
@@ -113,8 +130,8 @@
 				</div>
 				<span class="text-xs font-semibold text-gray-700 dark:text-gray-300">Generated Dataset</span
 				>
-				{#if toolOutput.metadata?.semantic_analysis_summary}
-					{@const summary = toolOutput.metadata.semantic_analysis_summary}
+				{#if (toolOutput as any).metadata?.semantic_analysis_summary}
+					{@const summary = (toolOutput as any).metadata.semantic_analysis_summary}
 					<span
 						class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
 					>
@@ -125,11 +142,11 @@
 							{summary}
 						{/if}
 					</span>
-				{:else if toolOutput.metadata?.performance}
+				{:else if (toolOutput as any).metadata?.performance}
 					<span
 						class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
 					>
-						{toolOutput.metadata.performance}
+						{(toolOutput as any).metadata.performance}
 					</span>
 				{/if}
 			</div>
@@ -177,7 +194,7 @@
 							: 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}"
 					>
 						{entity}
-						<span class="ml-1 opacity-50">({toolOutput.data[entity]?.length ?? 0})</span>
+						<span class="ml-1 opacity-50">({(toolOutput.data as any)[entity]?.length ?? 0})</span>
 					</button>
 				{/each}
 			</div>
@@ -224,7 +241,7 @@
 		</div>
 
 		<!-- Field Analysis Summary -->
-		{#if toolOutput.metadata?.semantic_analysis_summary}
+		{#if (toolOutput as any).metadata?.semantic_analysis_summary}
 			<div
 				class="rounded-lg bg-emerald-50/50 p-3 text-[11px] text-emerald-800 dark:bg-emerald-900/10 dark:text-emerald-300"
 			>
@@ -233,11 +250,11 @@
 					Semantic Analysis
 				</div>
 				<p class="leading-relaxed opacity-90">
-					{#if typeof toolOutput.metadata.semantic_analysis_summary === "object"}
-						{toolOutput.metadata.semantic_analysis_summary.summary ||
-							JSON.stringify(toolOutput.metadata.semantic_analysis_summary)}
+					{#if typeof (toolOutput as any).metadata.semantic_analysis_summary === "object"}
+						{(toolOutput as any).metadata.semantic_analysis_summary.summary ||
+							JSON.stringify((toolOutput as any).metadata.semantic_analysis_summary)}
 					{:else}
-						{toolOutput.metadata.semantic_analysis_summary}
+						{(toolOutput as any).metadata.semantic_analysis_summary}
 					{/if}
 				</p>
 			</div>
@@ -248,16 +265,17 @@
 	<div
 		class="scrollbar-custom rounded-md border border-gray-100 bg-white p-2 text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400"
 	>
-		{#each parseToolOutputs(update.result.outputs) as parsedOutput}
+		{#each parseToolOutputs((update.result as any).outputs) as parsedOutput}
+			{@const po = parsedOutput as any}
 			<div class="space-y-2">
-				{#if parsedOutput.text}
+				{#if po.text}
 					<pre
-						class="scrollbar-custom max-h-60 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs">{parsedOutput.text}</pre>
+						class="scrollbar-custom max-h-60 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs">{po.text}</pre>
 				{/if}
 
-				{#if parsedOutput.images.length > 0}
+				{#if po.images && po.images.length > 0}
 					<div class="flex flex-wrap gap-2">
-						{#each parsedOutput.images as image, imageIndex}
+						{#each po.images as image, imageIndex}
 							<img
 								alt={`Tool result image ${imageIndex + 1}`}
 								class="max-h-60 cursor-pointer rounded border border-gray-200 dark:border-gray-700"
@@ -267,9 +285,9 @@
 					</div>
 				{/if}
 
-				{#if parsedOutput.metadata.length > 0}
+				{#if po.metadata && po.metadata.length > 0}
 					<pre class="whitespace-pre-wrap break-all font-mono text-xs">{formatValue(
-							Object.fromEntries(parsedOutput.metadata)
+							Object.fromEntries(po.metadata)
 						)}</pre>
 				{/if}
 			</div>

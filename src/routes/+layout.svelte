@@ -248,9 +248,7 @@
 	{/if}
 </svelte:head>
 
-{#if showWelcome}
-	<WelcomeModal close={closeWelcomeModal} />
-{/if}
+<!-- WelcomeModal disabled — DevForge splash screen now acts as the welcome gate -->
 
 <BackgroundGenerationPoller />
 

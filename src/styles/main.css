@@ -10,6 +10,78 @@ body {
 	touch-action: pan-x pan-y;
 }
 
+/* ---- DevForge theme: DARK (default) ---- */
+:root {
+	--bg-base: #0a0a0c;
+	--backdrop-color: rgba(10, 10, 12, 0.85);
+	--glass-bg: rgba(255, 255, 255, 0.03);
+	--glass-border: rgba(255, 255, 255, 0.1);
+	--glass-shadow: rgba(0, 0, 0, 0.5);
+	--text-main: #ffffff;
+	--text-muted: #8a8a8a;
+	--text-link: #ffffff;
+	--text-link-hover: #aaaaaa;
+	--logo-gradient-from: #ffffff;
+	--logo-gradient-to: #777777;
+	--start-btn-bg: rgba(255, 255, 255, 0.05);
+	--start-btn-border: rgba(255, 255, 255, 0.15);
+	--start-btn-hover-bg: rgba(255, 255, 255, 0.1);
+	--start-btn-hover-border: rgba(255, 255, 255, 0.3);
+	--email-btn-bg: rgba(255, 255, 255, 0.05);
+	--email-btn-border: rgba(255, 255, 255, 0.2);
+	--email-btn-hover-bg: rgba(255, 255, 255, 0.1);
+	--email-btn-hover-border: rgba(255, 255, 255, 0.3);
+}
+
+/* ---- DevForge theme: LIGHT ---- */
+:root.light,
+.light :root,
+html:not(.dark) {
+	--bg-base: #f5f5f7;
+	--backdrop-color: rgba(245, 245, 247, 0.85);
+	--glass-bg: rgba(255, 255, 255, 0.7);
+	--glass-border: rgba(0, 0, 0, 0.08);
+	--glass-shadow: rgba(0, 0, 0, 0.12);
+	--text-main: #111111;
+	--text-muted: #666666;
+	--text-link: #111111;
+	--text-link-hover: #444444;
+	--logo-gradient-from: #111111;
+	--logo-gradient-to: #555555;
+	--start-btn-bg: rgba(0, 0, 0, 0.04);
+	--start-btn-border: rgba(0, 0, 0, 0.15);
+	--start-btn-hover-bg: rgba(0, 0, 0, 0.08);
+	--start-btn-hover-border: rgba(0, 0, 0, 0.25);
+	--email-btn-bg: rgba(0, 0, 0, 0.04);
+	--email-btn-border: rgba(0, 0, 0, 0.15);
+	--email-btn-hover-bg: rgba(0, 0, 0, 0.08);
+	--email-btn-hover-border: rgba(0, 0, 0, 0.25);
+}
+
+/* Dark mode override (html.dark) */
+html.dark {
+	--bg-base: #0a0a0c;
+	--backdrop-color: rgba(10, 10, 12, 0.85);
+	--glass-bg: rgba(255, 255, 255, 0.03);
+	--glass-border: rgba(255, 255, 255, 0.1);
+	--glass-shadow: rgba(0, 0, 0, 0.5);
+	--text-main: #ffffff;
+	--text-muted: #8a8a8a;
+	--text-link: #ffffff;
+	--text-link-hover: #aaaaaa;
+	--logo-gradient-from: #ffffff;
+	--logo-gradient-to: #777777;
+	--start-btn-bg: rgba(255, 255, 255, 0.05);
+	--start-btn-border: rgba(255, 255, 255, 0.15);
+	--start-btn-hover-bg: rgba(255, 255, 255, 0.1);
+	--start-btn-hover-border: rgba(255, 255, 255, 0.3);
+	--email-btn-bg: rgba(255, 255, 255, 0.05);
+	--email-btn-border: rgba(255, 255, 255, 0.2);
+	--email-btn-hover-bg: rgba(255, 255, 255, 0.1);
+	--email-btn-hover-border: rgba(255, 255, 255, 0.3);
+}
+
+
 @layer components {
 	.btn {
 		@apply inline-flex flex-shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap outline-none transition-all focus:ring disabled:cursor-default;
@@ -17,7 +89,7 @@ body {
 
 	.active-model {
 		/* Ensure active border wins over defaults/utilities in both themes */
-		@apply !border-black dark:!border-white/60;
+		@apply border-black dark:border-white/60 !important;
 	}
 
 	.file-hoverable {
@@ -29,11 +101,191 @@ body {
 	}
 
 	.active-tool {
-		@apply rounded-full !border-purple-200 bg-purple-100 pl-1 pr-2 text-purple-600 hover:text-purple-600 dark:!border-purple-700 dark:bg-purple-600/40 dark:text-purple-200;
+		@apply rounded-full border-purple-200 bg-purple-100 pl-1 pr-2 text-purple-600 hover:text-purple-600 dark:border-purple-700 dark:bg-purple-600/40 dark:text-purple-200 !important;
 	}
+
+	/* --- DEVFORGE LANDING COMPONENTS --- */
+	.devforge-blob {
+		@apply absolute rounded-full blur-[90px] -z-10 opacity-60;
+		animation: shift 20s infinite alternate ease-in-out;
+	}
+
+	.devforge-blob-1 {
+		@apply w-[45vw] h-[45vw] -top-[10%] -left-[10%];
+		background: radial-gradient(circle, rgba(120, 120, 120, 0.3) 0%, rgba(20, 20, 20, 0) 70%);
+	}
+
+	.devforge-blob-2 {
+		@apply w-[35vw] h-[35vw] -bottom-[15%] -right-[10%];
+		background: radial-gradient(circle, rgba(200, 200, 200, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+		animation-delay: -5s;
+		animation-duration: 25s;
+	}
+
+	@keyframes shift {
+		0% {
+			transform: translate(0, 0) scale(1);
+		}
+
+		50% {
+			transform: translate(5vw, 8vh) scale(1.1);
+		}
+
+		100% {
+			transform: translate(-8vw, 5vh) scale(0.9);
+		}
+	}
+
+	.devforge-glass-panel {
+		background: var(--glass-bg);
+		backdrop-filter: blur(24px);
+		-webkit-backdrop-filter: blur(24px);
+		border: 1px solid var(--glass-border);
+		box-shadow: 0 30px 60px var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		transition: all 0.9s cubic-bezier(0.19, 1, 0.22, 1);
+		@apply rounded-3xl w-[90%] max-w-[600px] min-h-[400px] flex flex-col items-center justify-center relative overflow-hidden;
+	}
+
+	.devforge-glass-panel.expanded {
+		@apply max-w-[900px] min-h-[500px];
+	}
+
+	.devforge-view {
+		@apply absolute w-full h-full flex flex-col items-center justify-center opacity-0 pointer-events-none;
+		transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+	}
+
+	.devforge-view.active {
+		@apply opacity-100 pointer-events-auto scale-100 translate-y-0;
+	}
+
+	.devforge-view.hidden-up {
+		@apply -translate-y-[40px] scale-[0.98] opacity-0 pointer-events-none;
+	}
+
+	.devforge-view.hidden-down {
+		@apply translate-y-[40px] scale-[0.98] opacity-0 pointer-events-none;
+	}
+
+	.devforge-logo {
+		@apply text-5xl font-light uppercase mb-10 select-none;
+		letter-spacing: 12px;
+		background: linear-gradient(135deg, var(--logo-gradient-from) 0%, var(--logo-gradient-to) 100%);
+		background-clip: text;
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		opacity: 0;
+		animation: elegantReveal 1.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+	}
+
+	.devforge-start-btn {
+		background: var(--start-btn-bg);
+		border: 1px solid var(--start-btn-border);
+		color: var(--text-main);
+		@apply px-10 py-3.5 rounded-full text-sm uppercase cursor-pointer transition-all duration-500 ease-in-out;
+		letter-spacing: 3px;
+		backdrop-filter: blur(10px);
+		opacity: 0;
+		transform: translateY(20px);
+		animation: fadeUp 1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+		animation-delay: 0.9s;
+	}
+
+	.devforge-start-btn:hover {
+		background: var(--start-btn-hover-bg);
+		border-color: var(--start-btn-hover-border);
+		transform: translateY(-2px);
+		box-shadow: 0 10px 20px var(--glass-shadow);
+	}
+
+	@keyframes elegantReveal {
+		0% {
+			opacity: 0;
+			transform: scale(0.95);
+			filter: blur(10px);
+		}
+
+		100% {
+			opacity: 1;
+			transform: scale(1);
+			filter: blur(0px);
+		}
+	}
+
+	@keyframes fadeUp {
+		0% {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+
+		100% {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.devforge-auth-header {
+		@apply text-[1.5rem] font-light mb-[30px] -mt-[20px];
+		color: var(--text-main);
+		letter-spacing: 4px;
+	}
+
+	.devforge-auth-buttons {
+		@apply flex flex-col gap-4 w-[80%] max-w-[320px];
+	}
+
+	.devforge-auth-btn {
+		@apply flex items-center justify-center gap-3 w-full px-6 py-3.5 rounded-full text-[0.95rem] font-medium cursor-pointer transition-all duration-300 ease-in-out no-underline;
+	}
+
+	.devforge-google-btn {
+		@apply bg-white text-black border border-white;
+	}
+
+	.devforge-google-btn:hover {
+		@apply bg-[#f1f1f1] -translate-y-[2px];
+		box-shadow: 0 8px 20px rgba(255, 255, 255, 0.1);
+	}
+
+	.devforge-email-btn {
+		background: var(--email-btn-bg);
+		color: var(--text-main);
+		border: 1px solid var(--email-btn-border);
+	}
+
+	.devforge-email-btn:hover {
+		background: var(--email-btn-hover-bg);
+		border-color: var(--email-btn-hover-border);
+		transform: translateY(-2px);
+	}
+
+	/* Backdrop for landing page — adapts to theme */
+	.devforge-backdrop {
+		background: var(--backdrop-color);
+	}
+
+	/* Muted text — adapts to theme */
+	.devforge-muted {
+		color: var(--text-muted);
+	}
+
+	/* Link in auth view — adapts to theme */
+	.devforge-link {
+		color: var(--text-link);
+		@apply no-underline font-semibold ml-1 transition-colors;
+	}
+
+	.devforge-link:hover {
+		color: var(--text-link-hover);
+		@apply underline;
+	}
+
 }
 
+/* end @layer components */
+
 @layer utilities {
+
 	/* your existing utilities */
 	.scrollbar-custom {
 		@apply scrollbar-thin scrollbar-track-transparent scrollbar-thumb-black/10 scrollbar-thumb-rounded-full scrollbar-w-1 hover:scrollbar-thumb-black/20 dark:scrollbar-thumb-white/10 dark:hover:scrollbar-thumb-white/20;
@@ -60,10 +312,13 @@ body {
 
 	/* Rounded top/bottom caps for vertical scrollbars (Chrome/Edge/Safari) */
 	.scrollbar-custom::-webkit-scrollbar-track {
-		@apply rounded-full bg-clip-padding; /* clip bg to padding so caps look round */
+		@apply rounded-full bg-clip-padding;
+		/* clip bg to padding so caps look round */
 		/* space for the end caps — tweak with Tailwind spacing */
-		border-top: theme("spacing.2") solid transparent; /* 0.5rem */
-		border-bottom: theme("spacing.2") solid transparent; /* 0.5rem */
+		border-top: theme("spacing.2") solid transparent;
+		/* 0.5rem */
+		border-bottom: theme("spacing.2") solid transparent;
+		/* 0.5rem */
 	}
 
 	/* Rounded left/right caps for horizontal scrollbars */
@@ -95,37 +350,43 @@ body {
 	}
 
 	.prose pre {
-		@apply border-[0.5px] bg-white text-gray-600 dark:border-gray-700 dark:!bg-gray-900 dark:bg-inherit dark:text-inherit;
+		@apply border-[0.5px] bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:bg-inherit dark:text-inherit !important;
 	}
 
 	/* Override prose-sm title sizes - 75% of original */
 	.prose-sm :where(h1):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 1.6em; /* 75% */
+		font-size: 1.6em;
+		/* 75% */
 		@apply font-semibold;
 	}
 
 	.prose-sm :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 1.07em; /* 75% */
+		font-size: 1.07em;
+		/* 75% */
 		@apply font-semibold;
 	}
 
 	.prose-sm :where(h3):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 0.96em; /* 75% */
+		font-size: 0.96em;
+		/* 75% */
 		@apply font-semibold;
 	}
 
 	.prose-sm :where(h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 0.8em; /* 75% */
+		font-size: 0.8em;
+		/* 75% */
 		@apply font-semibold;
 	}
 
 	.prose-sm :where(h5):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 0.75em; /* 75% */
+		font-size: 0.75em;
+		/* 75% */
 		@apply font-semibold;
 	}
 
 	.prose-sm :where(h6):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-		font-size: 0.7em; /* 75% */
+		font-size: 0.7em;
+		/* 75% */
 		@apply font-semibold;
 	}
 }

@@ -230,6 +230,8 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 	// we will append tokens to the content of this message
 	let messageToWriteToId: Message["id"] | undefined = undefined;
+	// RAG chunks to attach to the assistant message for citation UI rendering
+	let ragChunksForAssistant: import("$lib/rag/client").ChatFileChunk[] | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
 
@@ -318,7 +320,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			// Import RAG modules
 			const { ragClient } = await import("$lib/rag/client");
 			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
-			const { rewriteQueryWithHistory } = await import("$lib/server/rag/queryRewriter");
+			const { routeRagQuery } = await import("$lib/server/rag/ragRouter");
 
 			// Extract user query (last message in tree)
 			const userQuery = newPrompt?.trim();
@@ -327,64 +329,130 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
 			if (conv.ragEnabled !== false && userQuery && tenantId) {
-				const { detectFileAnalysisShortcut } = await import("$lib/server/rag/queryRewriter");
+				// Sync actual files from backend just in case frontend 'availableFiles' is stale (e.g., just uploaded)
+				let mergedFiles = availableFiles || [];
+				try {
+					const backendFiles = await ragClient.listFiles(tenantId.toString());
+					// Merge by ID to prevent duplicates, maintaining name and chunkCount
+					const backendMapped = backendFiles.map(
+						(f: import("$lib/rag/client").RagFileMetadata) => ({
+							id: f.id,
+							name: f.name,
+							chunkCount: f.chunkCount || 0,
+						})
+					);
+					const mergedMap = new Map([...mergedFiles, ...backendMapped].map((f) => [f.id, f]));
+					mergedFiles = Array.from(mergedMap.values());
+				} catch (e) {
+					console.warn("[RAG] Failed to sync backend files, using frontend list only", e);
+				}
 
-				// 1. Check for Direct File Analysis Shortcut
-				const shortcutFileId = detectFileAnalysisShortcut(userQuery, availableFiles || []);
+				// Build history WITHOUT current message, always use newUserMessageId tree
+				// Slice off the last element (the current message) so active file inference
+				// works correctly even on brand-new conversations with no parent messageId.
+				const historyForRewrite = buildSubtree(conv, newUserMessageId).slice(0, -1);
+
+				// ====================================================================
+				// ROUTING
+				// ====================================================================
+				const decision = await routeRagQuery(userQuery, {
+					availableFiles: mergedFiles,
+					conversationHistory: historyForRewrite,
+					locals,
+				});
 
 				let ragResponse: import("$lib/rag/client").SemanticSearchResponse | undefined = undefined;
 
-				if (shortcutFileId) {
-					console.log(`[RAG] Using direct file shortcut for fileId: ${shortcutFileId}`);
-					const targetFile = (availableFiles || []).find((f) => f.id === shortcutFileId);
-					const isPdf = targetFile?.name.toLowerCase().endsWith(".pdf");
-
-					// Implement requested offset strategy: skip first 3 chunks (boilerplate) for PDFs
-					const offset = isPdf ? 3 : 0;
-
+				// ====================================================================
+				// EXECUTION
+				// ====================================================================
+				if (decision.intent === "NO_RAG") {
+					// File list is NOT guaranteed to be in the system prompt —
+					// explicitly inject it so the LLM can answer "what files do I have?"
+					// accurately without hallucinating.
+					if (mergedFiles.length > 0) {
+						const fileList = mergedFiles
+							.map(
+								(f: { name: string; chunkCount?: number }, i) =>
+									`${i + 1}. ${f.name}${f.chunkCount ? ` (${f.chunkCount} chunks)` : ""}`
+							)
+							.join("\n");
+						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+						if (lastMsg && lastMsg.from === "user") {
+							lastMsg.content = `[System: The user has ${mergedFiles.length} uploaded file(s):]\n${fileList}\n\n---\n\n${lastMsg.content}`;
+						}
+						console.log(`[RAGRouter] → NO_RAG | injected file list (${mergedFiles.length} files)`);
+					} else {
+						console.log(`[RAGRouter] → NO_RAG | no files to inject, skipping`);
+					}
+				} else if (decision.intent === "FULL_SUMMARY" && decision.fileId) {
 					try {
 						ragResponse = await ragClient.getFileChunks(
-							shortcutFileId,
+							decision.fileId,
 							tenantId.toString(),
-							5,
-							offset
+							decision.limit ?? 20,
+							decision.offset ?? 0
 						);
 					} catch (e) {
-						console.warn("[RAG] Direct file fetch failed, falling back to semantic search", e);
+						console.warn("[RAG] FULL_SUMMARY fetch failed:", e);
+					}
+				} else if (
+					decision.intent === "KEYWORD_LOOKUP" ||
+					decision.intent === "TARGETED_SEARCH" ||
+					decision.intent === "GLOBAL_SEARCH"
+				) {
+					// Scale topK for GLOBAL_SEARCH based on how many files the tenant has
+					let effectiveTopK = decision.topK ?? 5;
+					if (decision.intent === "GLOBAL_SEARCH") {
+						if (mergedFiles.length > 20) effectiveTopK = 10;
+						else if (mergedFiles.length > 10) effectiveTopK = 8;
+					}
+					try {
+						ragResponse = await ragClient.semanticSearch(
+							{
+								messageId: newUserMessageId.toString(),
+								userQuery,
+								rewriteQuery: decision.searchQuery,
+								top_k: effectiveTopK,
+								fileIds: decision.fileId ? [decision.fileId] : undefined,
+							},
+							tenantId.toString()
+						);
+					} catch (e) {
+						console.warn(`[RAG] ${decision.intent} failed:`, e);
 					}
 				}
 
-				// 2. Default Path: Rewrite + Semantic Search (only if shortcut didn't run or failed)
-				if (!ragResponse) {
-					let rewriteQuery: string | undefined = undefined;
-					try {
-						// Build history WITHOUT current message (using parent messageId)
-						const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+				// ====================================================================
+				// INJECTION
+				// ====================================================================
+				if (decision.intent !== "NO_RAG") {
+					console.log("\n[RAG TRIGGERED] ====================");
+					console.log(`- Intent         : ${decision.intent}`);
+					console.log(`- Original Query : "${userQuery}"`);
+					if (decision.searchQuery) console.log(`- Rewrite Query  : "${decision.searchQuery}"`);
+					if (decision.fileName) console.log(`- Scoped File    : ${decision.fileName}`);
+					if (decision.limit) console.log(`- Chunks Limit   : ${decision.limit}`);
 
-						rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, {
-							locals,
-							availableFiles,
-						});
-						if (rewriteQuery === userQuery) rewriteQuery = undefined;
-					} catch (e) {
-						console.warn("[RAG] Rewrite failed, using original query", e);
-					}
-
-					// Call backend RAG search
-					ragResponse = await ragClient.semanticSearch(
-						{
-							messageId: newUserMessageId.toString(),
-							userQuery,
-							rewriteQuery,
-							top_k: 5,
-						},
-						tenantId.toString()
+					const foundFiles = ragResponse
+						? [
+								...new Set(
+									ragResponse.chunks.map((c: import("$lib/rag/client").ChatFileChunk) => c.filename)
+								),
+							]
+						: [];
+					console.log(
+						`- Docs Retrieved : ${foundFiles.length > 0 ? foundFiles.join(", ") : "None"}`
 					);
+					console.log("====================================\n");
 				}
 
 				// If chunks found, inject context directly into the user message
 				if (ragResponse && ragResponse.chunks.length > 0) {
 					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
+
+					// Save chunks so we can attach them to the assistant message for citation UI
+					ragChunksForAssistant = ragContextMessage.ragChunks ?? ragResponse.chunks;
 
 					// Injection Strategy: Prefix the latest user message with context
 					// This is more robust than a separate system message for most models
@@ -407,6 +475,10 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	const messageToWriteTo = conv.messages.find((message) => message.id === messageToWriteToId);
 	if (!messageToWriteTo) {
 		error(500, "Failed to create message");
+	}
+	// Attach RAG citation chunks to the assistant message so the frontend can render them
+	if (ragChunksForAssistant) {
+		messageToWriteTo.ragChunks = ragChunksForAssistant;
 	}
 	if (messagesForPrompt.length === 0) {
 		error(500, "Failed to create prompt");

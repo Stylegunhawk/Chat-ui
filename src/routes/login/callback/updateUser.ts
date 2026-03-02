@@ -15,6 +15,7 @@ import { addWeeks } from "date-fns";
 import { OIDConfig } from "$lib/server/auth";
 import { config } from "$lib/server/config";
 import { logger } from "$lib/server/logger";
+import { authenticateWithRAG, storeRAGTokenInSession } from "$lib/server/rag/auth";
 
 export async function updateUser(params: {
 	userData: UserinfoResponse;
@@ -229,6 +230,20 @@ export async function updateUser(params: {
 
 	// refresh session cookie
 	refreshSessionCookie(cookies, secretSessionId);
+
+	// Authenticate with RAG backend and store JWT
+	try {
+		if (userId && token.id_token) {
+			const ragAuth = await authenticateWithRAG(token.id_token, userId.toString());
+			await storeRAGTokenInSession(locals.sessionId, ragAuth);
+			logger.info("Successfully authenticated with RAG backend");
+		} else if (!token.id_token) {
+			logger.warn("No ID token available for RAG authentication");
+		}
+	} catch (error) {
+		logger.error({ error }, "Failed to authenticate with RAG backend");
+		// Don't fail the login process, just log the error
+	}
 
 	// migrate pre-existing conversations
 	await collections.conversations.updateMany(

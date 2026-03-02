@@ -318,9 +318,12 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 		try {
 			// Import RAG modules
-			const { ragClient } = await import("$lib/rag/client");
+			const { RAGClient } = await import("$lib/server/rag/client");
 			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
 			const { routeRagQuery } = await import("$lib/server/rag/ragRouter");
+
+			// Initialize RAG client with session (JWT auth)
+			const ragClient = new RAGClient(undefined, locals.sessionId);
 
 			// Extract user query (last message in tree)
 			const userQuery = newPrompt?.trim();
@@ -332,7 +335,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 				// Sync actual files from backend just in case frontend 'availableFiles' is stale (e.g., just uploaded)
 				let mergedFiles = availableFiles || [];
 				try {
-					const backendFiles = await ragClient.listFiles(tenantId.toString());
+					const backendFiles = await ragClient.listFiles();
 					// Merge by ID to prevent duplicates, maintaining name and chunkCount
 					const backendMapped = backendFiles.map(
 						(f: import("$lib/rag/client").RagFileMetadata) => ({
@@ -389,7 +392,6 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					try {
 						ragResponse = await ragClient.getFileChunks(
 							decision.fileId,
-							tenantId.toString(),
 							decision.limit ?? 20,
 							decision.offset ?? 0
 						);
@@ -408,16 +410,13 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 						else if (mergedFiles.length > 10) effectiveTopK = 8;
 					}
 					try {
-						ragResponse = await ragClient.semanticSearch(
-							{
-								messageId: newUserMessageId.toString(),
-								userQuery,
-								rewriteQuery: decision.searchQuery,
-								top_k: effectiveTopK,
-								fileIds: decision.fileId ? [decision.fileId] : undefined,
-							},
-							tenantId.toString()
-						);
+						ragResponse = await ragClient.semanticSearch({
+							messageId: newUserMessageId.toString(),
+							userQuery,
+							rewriteQuery: decision.searchQuery,
+							top_k: effectiveTopK,
+							fileIds: decision.fileId ? [decision.fileId] : undefined,
+						});
 					} catch (e) {
 						console.warn(`[RAG] ${decision.intent} failed:`, e);
 					}

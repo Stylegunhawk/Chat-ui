@@ -441,8 +441,7 @@
 
 		// Fetch RAG files on mount
 		try {
-			const tenantId = data.user?._id?.toString() || data.sessionId || "";
-			ragFiles = await ragClient.listFiles(tenantId);
+			ragFiles = await ragClient.listFiles();
 		} catch (e) {
 			console.error("[RAG] Failed to fetch files on mount:", e);
 		}
@@ -519,8 +518,7 @@
 			}
 			// Refresh files after toggle change if it was enabled
 			if (enabled) {
-				const tenantId = data.user?._id?.toString() || data.sessionId || "";
-				ragFiles = await ragClient.listFiles(tenantId);
+				ragFiles = await ragClient.listFiles();
 			}
 			await invalidateAll();
 		} catch (e) {
@@ -615,15 +613,9 @@
 	{ragFiles}
 	onragtoggle={onRagToggle}
 	onragfilesrefresh={async () => {
-		const tenantId = data.user?._id?.toString() || data.sessionId || "";
-		ragFiles = await ragClient.listFiles(tenantId);
+		ragFiles = await ragClient.listFiles();
 	}}
 />
-
-{#if showSubscribeModal}
-	<SubscribeModal close={() => (showSubscribeModal = false)} />
-{/if}
-
 {#if showSafetyModal}
 	<Modal onclose={() => (showSafetyModal = false)}>
 		<div class="p-6">

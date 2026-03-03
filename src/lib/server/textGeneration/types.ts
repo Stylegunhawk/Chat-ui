@@ -3,6 +3,7 @@ import type { Endpoint } from "../endpoints/endpoints";
 import type { Conversation } from "$lib/types/Conversation";
 import type { Message } from "$lib/types/Message";
 import type { Assistant } from "$lib/types/Assistant";
+import type { RagFileMetadata } from "$lib/rag/client";
 
 export interface TextGenerationContext {
 	model: ProcessedModel;
@@ -19,6 +20,7 @@ export interface TextGenerationContext {
 	forceTools?: boolean;
 	/** Inference provider preference: "auto", "fastest", "cheapest", or a specific provider name */
 	provider?: string;
+	ragFiles?: RagFileMetadata[];
 	locals: App.Locals | undefined;
 	abortController: AbortController;
 }

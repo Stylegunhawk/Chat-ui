@@ -165,7 +165,9 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					})
 				)
 			),
-			availableFiles: z.optional(z.array(z.object({ id: z.string(), name: z.string() }))),
+			availableFiles: z.optional(
+				z.array(z.object({ id: z.string(), name: z.string(), url: z.string().optional() }))
+			),
 		})
 		.parse(JSON.parse(json));
 
@@ -234,6 +236,8 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	let ragChunksForAssistant: import("$lib/rag/client").ChatFileChunk[] | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
+	// RAG files for context injection (MCP/GitOps)
+	let mergedFilesForContext: import("$lib/rag/client").RagFileMetadata[] = [];
 
 	if (isRetry && messageId) {
 		// two cases, if we're retrying a user message with a newPrompt set,
@@ -313,157 +317,79 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 
 		// ============================================================================
-		// RAG INJECTION - Phase 1
+		// RAG METADATA — Always sync for MCP/GitOps (even if prompt injection is off)
 		// ============================================================================
 
 		try {
-			// Import RAG modules
 			const { RAGClient } = await import("$lib/server/rag/client");
+			const { RagAgent } = await import("$lib/server/rag/ragAgent");
 			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
-			const { routeRagQuery } = await import("$lib/server/rag/ragRouter");
+			const { generateFromDefaultEndpoint } = await import(
+				"$lib/server/generateFromDefaultEndpoint"
+			);
 
 			// Initialize RAG client with session (JWT auth)
 			const ragClient = new RAGClient(undefined, locals.sessionId);
-
-			// Extract user query (last message in tree)
 			const userQuery = newPrompt?.trim();
-
-			// Get tenant ID from session (Google user ID)
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
-			if (conv.ragEnabled !== false && userQuery && tenantId) {
-				// Sync actual files from backend just in case frontend 'availableFiles' is stale (e.g., just uploaded)
-				let mergedFiles = availableFiles || [];
+			console.log(
+				`[RAG DEBUG] Condition Check - ragEnabled: ${conv.ragEnabled}, hasQuery: ${!!userQuery}, hasTenant: ${!!tenantId}`
+			);
+
+			if (tenantId) {
+				// ── Always Sync files for Tool Metadata (GitOps resolution) ──
+				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = availableFiles || [];
+				console.log(
+					`[RAG DEBUG] Starting sync for user: ${tenantId}. Initial files: ${mergedFiles.length}`
+				);
 				try {
-					const backendFiles = await ragClient.listFiles();
-					// Merge by ID to prevent duplicates, maintaining name and chunkCount
-					const backendMapped = backendFiles.map(
-						(f: import("$lib/rag/client").RagFileMetadata) => ({
-							id: f.id,
-							name: f.name,
-							chunkCount: f.chunkCount || 0,
-						})
-					);
-					const mergedMap = new Map([...mergedFiles, ...backendMapped].map((f) => [f.id, f]));
+					const backendFiles =
+						(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
+					console.log(`[RAG DEBUG] Backend returned ${backendFiles.length} files`);
+					const mergedMap = new Map([...mergedFiles, ...backendFiles].map((f) => [f.id, f]));
 					mergedFiles = Array.from(mergedMap.values());
 				} catch (e) {
-					console.warn("[RAG] Failed to sync backend files, using frontend list only", e);
+					// Handle 401 or other network errors gracefully
+					console.warn("[RAG DEBUG] Failed to sync backend files, using frontend list only.", e);
 				}
+				mergedFilesForContext = mergedFiles;
+				console.log(
+					`[RAG DEBUG] Final mergedFilesForContext count: ${mergedFilesForContext.length}`
+				);
 
-				// Build history WITHOUT current message, always use newUserMessageId tree
-				// Slice off the last element (the current message) so active file inference
-				// works correctly even on brand-new conversations with no parent messageId.
-				const historyForRewrite = buildSubtree(conv, newUserMessageId).slice(0, -1);
+				// ── RAG INJECTION: Only if enabled for conversation ─────────────
+				if (conv.ragEnabled !== false && userQuery) {
+					const ragAgent = new RagAgent(ragClient, generateFromDefaultEndpoint);
+					const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
 
-				// ====================================================================
-				// ROUTING
-				// ====================================================================
-				const decision = await routeRagQuery(userQuery, {
-					availableFiles: mergedFiles,
-					conversationHistory: historyForRewrite,
-					locals,
-				});
+					// ── Run the RAG Agent ─────────────────────────────────────────────
+					const { plan, chunks } = await ragAgent.run(
+						userQuery,
+						mergedFiles,
+						historyForAgent,
+						newUserMessageId.toString(),
+						locals
+					);
 
-				let ragResponse: import("$lib/rag/client").SemanticSearchResponse | undefined = undefined;
+					// ── Only inject retrieved chunks into prompt (Skip NO_RAG meta-injection) ─
+					if (chunks.length > 0) {
+						const ragContextMessage = buildRagContextMessage(chunks, plan.strategy);
 
-				// ====================================================================
-				// EXECUTION
-				// ====================================================================
-				if (decision.intent === "NO_RAG") {
-					// File list is NOT guaranteed to be in the system prompt —
-					// explicitly inject it so the LLM can answer "what files do I have?"
-					// accurately without hallucinating.
-					if (mergedFiles.length > 0) {
-						const fileList = mergedFiles
-							.map(
-								(f: { name: string; chunkCount?: number }, i) =>
-									`${i + 1}. ${f.name}${f.chunkCount ? ` (${f.chunkCount} chunks)` : ""}`
-							)
-							.join("\n");
+						// Attach chunks to assistant message for citation UI rendering
+						ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
+
+						// Prefix the latest user message with retrieved context
 						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
 						if (lastMsg && lastMsg.from === "user") {
-							lastMsg.content = `[System: The user has ${mergedFiles.length} uploaded file(s):]\n${fileList}\n\n---\n\n${lastMsg.content}`;
+							lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
 						}
-						console.log(`[RAGRouter] → NO_RAG | injected file list (${mergedFiles.length} files)`);
-					} else {
-						console.log(`[RAGRouter] → NO_RAG | no files to inject, skipping`);
-					}
-				} else if (decision.intent === "FULL_SUMMARY" && decision.fileId) {
-					try {
-						ragResponse = await ragClient.getFileChunks(
-							decision.fileId,
-							decision.limit ?? 20,
-							decision.offset ?? 0
-						);
-					} catch (e) {
-						console.warn("[RAG] FULL_SUMMARY fetch failed:", e);
-					}
-				} else if (
-					decision.intent === "KEYWORD_LOOKUP" ||
-					decision.intent === "TARGETED_SEARCH" ||
-					decision.intent === "GLOBAL_SEARCH"
-				) {
-					// Scale topK for GLOBAL_SEARCH based on how many files the tenant has
-					let effectiveTopK = decision.topK ?? 5;
-					if (decision.intent === "GLOBAL_SEARCH") {
-						if (mergedFiles.length > 20) effectiveTopK = 10;
-						else if (mergedFiles.length > 10) effectiveTopK = 8;
-					}
-					try {
-						ragResponse = await ragClient.semanticSearch({
-							messageId: newUserMessageId.toString(),
-							userQuery,
-							rewriteQuery: decision.searchQuery,
-							top_k: effectiveTopK,
-							fileIds: decision.fileId ? [decision.fileId] : undefined,
-						});
-					} catch (e) {
-						console.warn(`[RAG] ${decision.intent} failed:`, e);
-					}
-				}
-
-				// ====================================================================
-				// INJECTION
-				// ====================================================================
-				if (decision.intent !== "NO_RAG") {
-					console.log("\n[RAG TRIGGERED] ====================");
-					console.log(`- Intent         : ${decision.intent}`);
-					console.log(`- Original Query : "${userQuery}"`);
-					if (decision.searchQuery) console.log(`- Rewrite Query  : "${decision.searchQuery}"`);
-					if (decision.fileName) console.log(`- Scoped File    : ${decision.fileName}`);
-					if (decision.limit) console.log(`- Chunks Limit   : ${decision.limit}`);
-
-					const foundFiles = ragResponse
-						? [
-								...new Set(
-									ragResponse.chunks.map((c: import("$lib/rag/client").ChatFileChunk) => c.filename)
-								),
-							]
-						: [];
-					console.log(
-						`- Docs Retrieved : ${foundFiles.length > 0 ? foundFiles.join(", ") : "None"}`
-					);
-					console.log("====================================\n");
-				}
-
-				// If chunks found, inject context directly into the user message
-				if (ragResponse && ragResponse.chunks.length > 0) {
-					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
-
-					// Save chunks so we can attach them to the assistant message for citation UI
-					ragChunksForAssistant = ragContextMessage.ragChunks ?? ragResponse.chunks;
-
-					// Injection Strategy: Prefix the latest user message with context
-					// This is more robust than a separate system message for most models
-					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-					if (lastMsg && lastMsg.from === "user") {
-						lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
 					}
 				}
 			}
 		} catch (error) {
-			// NEVER block chat if RAG fails - degrade gracefully
-			console.error("[RAG] Search failed, proceeding without context:", error);
+			// NEVER block chat if RAG fails — degrade gracefully
+			console.error("[RAG] Metadata sync or injection failed:", error);
 		}
 
 		// ============================================================================
@@ -744,6 +670,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 						config.isHuggingChat && !model.isRouter
 							? userSettings?.providerOverrides?.[model.id]
 							: undefined,
+					ragFiles: mergedFilesForContext,
 					locals,
 					abortController: ctrl,
 				};

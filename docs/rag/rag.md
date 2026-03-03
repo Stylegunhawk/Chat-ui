@@ -100,6 +100,18 @@ The RAG system enables the chat interface to contextually retrieve and reference
 - ✅ RAG authentication failures don't break login flow
 - ✅ JWT tokens are securely stored server-side only
 
+#### Phase 7: Agentic RAG Orchestrator (Current)
+
+**Goal:** Transition from rule-based routing to an intelligent agent-based planning system.
+
+- **Key Changes:**
+  - **RagAgent Orchestrator**: A pure, dependency-injected class (`src/lib/server/rag/ragAgent.ts`) that coordinates planning and execution.
+  - **LLM-Based Planner**: Created `RagPlanner.ts` which uses the local `TASK_MODEL` to decide retrieval strategy.
+  - **Robust Fallback**: Implemented a 2-second timeout on LLM planning with an instant fallback to `ragAgentLegacy.ts` (deterministic regex logic).
+  - **Zero-Latency Context**: Created `historyCompressor.ts` to summarize conversation context without additional LLM calls.
+  - **Strategy-Aware Budget**: Updated `contextBuilder.ts` to dynamically adjust context size (4k vs 8k) based on chosen strategy.
+- **Verification:** Improved handling of complex, multi-file relational queries and provided graceful degradation for 401/timeout scenarios.
+
 ---
 
 ### ⏳ Upcoming Phases
@@ -207,6 +219,13 @@ All RAG operations go through SvelteKit proxy routes for security:
 - **Error Handling:** Graceful handling of RAG backend failures
 - **Security:** Never expose RAG backend URLs or tokens to client
 
+### 5. Agentic Orchestration & Fallback Planning
+
+The RAG system now uses a two-tier planning architecture:
+- **Tier 1 (LLM Planner):** Tries to use the local Ollama model to reason about complex multi-file queries.
+- **Tier 2 (Regex Fallback):** If Tier 1 fails, times out (2s), or returns invalid JSON, the system instantly reverts to a legacy deterministic planner.
+- **Hard Limits:** All plans are subject to code-enforced limits (max 3 `DEEP_DIVE` files, 5 files total) to prevent latency/memory spikes.
+
 ---
 
 ## 📂 File Reference
@@ -216,9 +235,13 @@ All RAG operations go through SvelteKit proxy routes for security:
 | `src/lib/rag/client.ts`                           | Centralized API client                 | 3     |
 | `src/lib/rag/browserClient.ts`                    | Browser-safe proxy client              | 3     |
 | `src/lib/rag/context.ts`                          | Shared RAG types                      | 4     |
-| `src/lib/server/rag/contextBuilder.ts`            | Prompt formatter                      | 1, 4  |
-| `src/lib/server/rag/queryRewriter.ts`             | Query transformation logic            | 2     |
-| `src/lib/server/rag/auth.ts`                      | JWT authentication utilities           | 6     |
+| `src/lib/server/rag/ragAgent.ts`              | Main Orchestrator (Plan + Execute)    | 7     |
+| `src/lib/server/rag/ragPlanner.ts`            | LLM-based Strategy Planner            | 7     |
+| `src/lib/server/rag/ragAgentLegacy.ts`        | Deterministic Regex Fallback Planner  | 7     |
+| `src/lib/server/rag/historyCompressor.ts`     | Zero-latency Context Compressor       | 7     |
+| `src/lib/server/rag/contextBuilder.ts`        | Prompt formatter (4k/8k scaling)      | 1, 4, 7 |
+| `src/lib/server/rag/queryRewriter.ts`         | Query transformation logic            | 2     |
+| `src/lib/server/rag/auth.ts`                  | JWT authentication utilities           | 6     |
 | `src/lib/components/chat/MessageRenderer.svelte`  | UI Routing layer                      | 4     |
 | `src/lib/components/chat/RagReferenceCard.svelte` | Citation UI Card                      | 4     |
 | `src/routes/api/v1/rag/files/+server.ts`          | File listing proxy (JWT auth)         | 3, 6  |
@@ -226,6 +249,6 @@ All RAG operations go through SvelteKit proxy routes for security:
 | `src/routes/api/v1/rag/file/[id]/+server.ts`      | File deletion proxy (JWT auth)        | 3, 6  |
 | `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Semantic search proxy (JWT auth) | 3, 6  |
 | `src/routes/api/v1/rag/file/[id]/chunks/+server.ts` | File chunks proxy (JWT auth)          | 3, 6  |
-| `src/routes/conversation/[id]/+server.ts`         | Core Chat-RAG integration              | 1     |
+| `src/routes/conversation/[id]/+server.ts`         | Core Chat-RAG integration              | 1, 7  |
 | `src/routes/login/callback/updateUser.ts`        | Google SSO + RAG JWT integration       | 6     |
 | `src/lib/types/Session.ts`                        | Session interface with JWT fields     | 6     |

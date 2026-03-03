@@ -44,6 +44,7 @@ export interface ExecuteToolCallsParams {
 	abortSignal?: AbortSignal;
 	toolTimeoutMs?: number;
 	locals?: App.Locals;
+	ragFiles?: import("$lib/rag/client").RagFileMetadata[];
 }
 
 export interface ToolCallExecutionResult {
@@ -77,6 +78,7 @@ export async function* executeToolCalls({
 	abortSignal,
 	toolTimeoutMs,
 	locals,
+	ragFiles,
 }: ExecuteToolCallsParams): AsyncGenerator<ToolExecutionEvent, void, undefined> {
 	const effectiveTimeoutMs = toolTimeoutMs ?? getMcpToolTimeoutMs();
 	const toolMessages: ChatCompletionMessageParam[] = [];
@@ -94,7 +96,19 @@ export async function* executeToolCalls({
 	};
 
 	const prepared = calls.map((call) => {
-		const argsObj = parseArgs(call.arguments);
+		const argsObj = parseArgs(call.arguments) as Record<string, unknown> & {
+			context?: Record<string, unknown> & { file_url?: string; available_files?: unknown[] };
+			query?: string;
+			file_path?: string;
+			commit_message?: string;
+			repo_name?: string;
+			branch_name?: string;
+			head_branch?: string;
+			base_branch?: string;
+			source_branch?: string;
+			content?: string;
+			fields?: unknown;
+		};
 		const paramsClean: Record<string, Primitive> = {};
 		for (const [k, v] of Object.entries(argsObj ?? {})) {
 			const prim = toPrimitive(v);
@@ -105,7 +119,13 @@ export async function* executeToolCalls({
 		// arguments (e.g. "image_1") while the full data: URLs or image blobs are
 		// only sent to the MCP tool server.
 		attachFileRefsToArgs(argsObj, resolveFileRef);
-		return { call, argsObj, paramsClean, uuid: randomUUID() };
+		return {
+			call,
+			argsObj,
+			paramsClean,
+			uuid: randomUUID(),
+			ambiguityError: undefined as string | undefined,
+		};
 	});
 
 	// Inject GitHub token for github_operation tool calls
@@ -120,6 +140,42 @@ export async function* executeToolCalls({
 				...(p.argsObj.context as Record<string, unknown> | undefined),
 				github_token: locals.settings.githubToken,
 			};
+		}
+		// Inject RAG file_url if filename matches query or file_path
+		if (
+			mappingEntry?.tool === "github_operation" &&
+			Array.isArray(ragFiles) &&
+			ragFiles.length > 0
+		) {
+			const query = String(p.argsObj.query || "").toLowerCase();
+			const filePath = String(p.argsObj.file_path || "").toLowerCase();
+
+			// 1. Try Exact Matches
+			const exactMatches = ragFiles.filter(
+				(f) => query.includes(f.name.toLowerCase()) || filePath.includes(f.name.toLowerCase())
+			);
+
+			if (exactMatches.length === 1) {
+				const ctx = p.argsObj.context ?? {};
+				ctx.file_url = exactMatches[0].url;
+				p.argsObj.context = ctx;
+			} else if (exactMatches.length > 1) {
+				p.ambiguityError = `Multiple exact matches found: ${exactMatches.map((f) => f.name).join(", ")}. Please be more specific.`;
+			} else {
+				// 2. Try Extension-less Matches
+				const extLessMatches = ragFiles.filter((f) => {
+					const nameWithoutExt = f.name.replace(/\.[^/.]+$/, "").toLowerCase();
+					return query.includes(nameWithoutExt) || filePath.includes(nameWithoutExt);
+				});
+
+				if (extLessMatches.length === 1) {
+					const ctx = p.argsObj.context ?? {};
+					ctx.file_url = extLessMatches[0].url;
+					p.argsObj.context = ctx;
+				} else if (extLessMatches.length > 1) {
+					p.ambiguityError = `Ambiguous reference. Multiple files match: ${extLessMatches.map((f) => f.name).join(", ")}. Please specify the extension.`;
+				}
+			}
 		}
 
 		// Normalize generate_data fields (GPT-OSS often sends objects instead of strings)
@@ -240,6 +296,23 @@ export async function* executeToolCalls({
 			return;
 		}
 
+		if (p.ambiguityError) {
+			const message = p.ambiguityError;
+			results.push({
+				index,
+				error: message,
+				uuid: p.uuid,
+				paramsClean: p.paramsClean,
+			});
+			updatesQueue.push({
+				type: MessageUpdateType.Tool,
+				subtype: MessageToolUpdateType.Error,
+				uuid: p.uuid,
+				message,
+			});
+			return;
+		}
+
 		const mappingEntry = mapping[p.call.name];
 		if (!mappingEntry) {
 			const message = `Unknown MCP function: ${p.call.name}`;
@@ -314,6 +387,28 @@ export async function* executeToolCalls({
 				if (action === "reject") {
 					throw new Error("Operation cancelled by user");
 				}
+			}
+
+			if (mappingEntry.tool === "github_operation") {
+				const logArgs = { ...p.argsObj };
+				const logContext = { ...(logArgs.context as Record<string, unknown> | undefined) };
+				if (logContext.github_token) logContext.github_token = "[REDACTED]";
+
+				logger.info(
+					{
+						tool: mappingEntry.tool,
+						args: logArgs,
+						context: logContext,
+						hasFileUrl: !!p.argsObj.context?.file_url,
+						hasAvailableFiles: Array.isArray(p.argsObj.context?.available_files),
+						commitMessage: p.argsObj?.commit_message,
+						repo: p.argsObj?.repo_name,
+						branch: p.argsObj?.branch_name,
+						ragFilesCount: ragFiles?.length || 0,
+						ragFileNames: ragFiles?.map((f) => f.name) || [],
+					},
+					"[GITOPS DEBUG] MCP CALL PAYLOAD"
+				);
 			}
 
 			const toolResponse: McpToolTextResponse = await callMcpTool(

@@ -6,6 +6,7 @@
 
 import type { ChatFileChunk } from "$lib/rag/client";
 import { type RagContextMessage } from "$lib/rag/context";
+import type { RagStrategy } from "$lib/server/rag/ragAgent";
 
 // Re-export for server usage
 export { isRagContextMessage } from "$lib/rag/context";
@@ -16,22 +17,22 @@ export { isRagContextMessage } from "$lib/rag/context";
 
 /**
  * Minimum similarity score (post-rerank, sigmoid-normalized [0,1]) to include
- * a chunk in the LLM context. Cross-encoder scores below this are noise.
- *
- * 0.45 is deliberately conservative — the cross-encoder reranker on the backend
- * already throws away the worst results. This just prevents marginal ones from
- * polluting the prompt.
+ * a chunk in the LLM context.
  */
 const MIN_SIMILARITY_SCORE = 0.45;
 
 /**
- * Maximum total character length to inject into a single LLM prompt.
- * Prevents context window overflow on large FULL_SUMMARY fetches.
- *
- * ~4000 chars ≈ ~1000 tokens — safe headroom for most models.
- * FULL_SUMMARY can return 20 chunks × ~300 chars each = 6000 chars without this cap.
+ * Context budget in chars.
+ * - Simple queries (FILE_SEMANTIC, SEMANTIC_SEARCH, FILE_DEEP_DIVE): 4000 chars (~1000 tokens)
+ * - Multi-file queries (HYBRID, FULL_CONTEXT): 8000 chars (~2000 tokens)
  */
-const MAX_CONTEXT_CHARS = 4000;
+const CONTEXT_BUDGET_SIMPLE = 4000;
+const CONTEXT_BUDGET_LARGE = 8000;
+
+function getContextBudget(strategy?: RagStrategy): number {
+	if (strategy === "HYBRID" || strategy === "FULL_CONTEXT") return CONTEXT_BUDGET_LARGE;
+	return CONTEXT_BUDGET_SIMPLE;
+}
 
 // ============================================================================
 // HELPERS
@@ -72,10 +73,13 @@ function getLanguageFromFilename(filename: string): string {
  * Pipeline:
  *   1. Score filter  — drop chunks with similarity < MIN_SIMILARITY_SCORE
  *   2. Role sort     — entry > dependency > supporting
- *   3. Budget cap    — trim to MAX_CONTEXT_CHARS to prevent context overflow
+ *   3. Budget cap    — trim to budget (4k simple / 8k HYBRID+FULL_CONTEXT)
  *   4. Format        — structured <coderef> XML with file, relevance, role, line
  */
-export function buildRagContextMessage(chunks: ChatFileChunk[]): RagContextMessage {
+export function buildRagContextMessage(
+	chunks: ChatFileChunk[],
+	strategy?: RagStrategy
+): RagContextMessage {
 	if (chunks.length === 0) {
 		throw new Error("Cannot build context from empty chunks");
 	}
@@ -109,8 +113,7 @@ export function buildRagContextMessage(chunks: ChatFileChunk[]): RagContextMessa
 	const sorted = [...scoredChunks].sort((a, b) => rolePriority[a.role] - rolePriority[b.role]);
 
 	// ── Step 3: Context budget cap ───────────────────────────────────────────
-	// Walk chunks in priority order, accumulate text length, stop when budget
-	// is exhausted. This prevents FULL_SUMMARY from blowing the context window.
+	const MAX_CONTEXT_CHARS = getContextBudget(strategy);
 	let budget = MAX_CONTEXT_CHARS;
 	const budgeted: ChatFileChunk[] = [];
 	for (const chunk of sorted) {
@@ -136,6 +139,7 @@ File: ${chunk.filename}
 Relevance: ${relevancePercent}%
 Role: ${chunk.role}
 ${chunk.pageNumber ? `Line: ${chunk.pageNumber}` : ""}
+Source URL: ${chunk.fileUrl || "N/A"}
 
 \`\`\`${lang}
 ${chunk.text.trim()}

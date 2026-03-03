@@ -15,6 +15,7 @@ interface ConversationData {
 	updatedAt: Date;
 	modelId: string;
 	shared: boolean;
+	ragEnabled: boolean;
 }
 
 export const load: PageLoad = async ({ params, depends, fetch, url, parent }) => {

@@ -333,30 +333,19 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 			const userQuery = newPrompt?.trim();
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
-			console.log(
-				`[RAG DEBUG] Condition Check - ragEnabled: ${conv.ragEnabled}, hasQuery: ${!!userQuery}, hasTenant: ${!!tenantId}`
-			);
-
 			if (tenantId) {
 				// ── Always Sync files for Tool Metadata (GitOps resolution) ──
 				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = availableFiles || [];
-				console.log(
-					`[RAG DEBUG] Starting sync for user: ${tenantId}. Initial files: ${mergedFiles.length}`
-				);
 				try {
 					const backendFiles =
 						(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
-					console.log(`[RAG DEBUG] Backend returned ${backendFiles.length} files`);
 					const mergedMap = new Map([...mergedFiles, ...backendFiles].map((f) => [f.id, f]));
 					mergedFiles = Array.from(mergedMap.values());
 				} catch (e) {
 					// Handle 401 or other network errors gracefully
-					console.warn("[RAG DEBUG] Failed to sync backend files, using frontend list only.", e);
+					console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
 				}
 				mergedFilesForContext = mergedFiles;
-				console.log(
-					`[RAG DEBUG] Final mergedFilesForContext count: ${mergedFilesForContext.length}`
-				);
 
 				// ── RAG INJECTION: Only if enabled for conversation ─────────────
 				if (conv.ragEnabled !== false && userQuery) {

@@ -389,28 +389,6 @@ export async function* executeToolCalls({
 				}
 			}
 
-			if (mappingEntry.tool === "github_operation") {
-				const logArgs = { ...p.argsObj };
-				const logContext = { ...(logArgs.context as Record<string, unknown> | undefined) };
-				if (logContext.github_token) logContext.github_token = "[REDACTED]";
-
-				logger.info(
-					{
-						tool: mappingEntry.tool,
-						args: logArgs,
-						context: logContext,
-						hasFileUrl: !!p.argsObj.context?.file_url,
-						hasAvailableFiles: Array.isArray(p.argsObj.context?.available_files),
-						commitMessage: p.argsObj?.commit_message,
-						repo: p.argsObj?.repo_name,
-						branch: p.argsObj?.branch_name,
-						ragFilesCount: ragFiles?.length || 0,
-						ragFileNames: ragFiles?.map((f) => f.name) || [],
-					},
-					"[GITOPS DEBUG] MCP CALL PAYLOAD"
-				);
-			}
-
 			const toolResponse: McpToolTextResponse = await callMcpTool(
 				serverCfg,
 				mappingEntry.tool,

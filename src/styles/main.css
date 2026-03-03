@@ -143,6 +143,8 @@ html.dark {
 		border: 1px solid var(--glass-border);
 		box-shadow: 0 30px 60px var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 		transition: all 0.9s cubic-bezier(0.19, 1, 0.22, 1);
+		position: relative;
+		z-index: 1;
 		@apply rounded-3xl w-[90%] max-w-[600px] min-h-[400px] flex flex-col items-center justify-center relative overflow-hidden;
 	}
 
@@ -259,9 +261,33 @@ html.dark {
 		transform: translateY(-2px);
 	}
 
-	/* Backdrop for landing page — adapts to theme */
+	/* Backdrop for landing page — background image adapts to theme */
 	.devforge-backdrop {
-		background: var(--backdrop-color);
+		background-image: url('/imm1.jpeg');
+		background-size: cover;
+		background-position: center;
+		background-repeat: no-repeat;
+	}
+
+	/* Dark overlay for readability (light mode) */
+	.devforge-backdrop::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: rgba(245, 245, 247, 0.35);
+		backdrop-filter: blur(0px);
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	/* Dark mode: use imm2.jpg */
+	html.dark .devforge-backdrop {
+		background-image: url('/imm2.jpg');
+	}
+
+	/* Dark overlay for readability (dark mode) */
+	html.dark .devforge-backdrop::before {
+		background: rgba(10, 10, 12, 0.5);
 	}
 
 	/* Muted text — adapts to theme */

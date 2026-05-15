@@ -7,6 +7,7 @@ import {
 	type MessageToolResultUpdate,
 	type MessageToolErrorUpdate,
 	type MessageToolProgressUpdate,
+	type MessageToolConfirmUpdate,
 	MessageUpdateType,
 	MessageToolUpdateType,
 } from "$lib/types/MessageUpdate";

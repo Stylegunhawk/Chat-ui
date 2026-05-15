@@ -14,6 +14,14 @@ export interface McpServerConfig {
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_GENERATE_DATA_TIMEOUT_MS = 600_000;
+
+export function getEffectiveMcpToolTimeoutMs(tool: string, baseTimeoutMs: number): number {
+	if (tool === "generate_data") {
+		return Math.max(baseTimeoutMs, DEFAULT_GENERATE_DATA_TIMEOUT_MS);
+	}
+	return baseTimeoutMs;
+}
 
 export function getMcpToolTimeoutMs(): number {
 	const envValue = config.MCP_TOOL_TIMEOUT_MS;
@@ -65,9 +73,10 @@ export async function callMcpTool(
 	// that already composes outer cancellation. We still enforce a per-call timeout here.
 	let activeClient = client ?? (await getClient(server, signal));
 
+	const effectiveTimeoutMs = getEffectiveMcpToolTimeoutMs(tool, timeoutMs);
 	const callToolOptions = {
 		signal,
-		timeout: timeoutMs,
+		timeout: effectiveTimeoutMs,
 		// Enable progress tokens so long-running tools keep extending the timeout.
 		onprogress: (progress: McpToolProgress) => {
 			onProgress?.({

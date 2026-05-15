@@ -53,14 +53,11 @@ export const GET = async ({ params, locals, url }: RequestEvent) => {
 			headers: { "Content-Type": "application/json" },
 		});
 	} catch (err) {
+		// Re-throw SvelteKit HttpErrors (from error() calls above)
+		if (err && typeof err === "object" && "status" in err) throw err;
+
 		console.error("[RAG] File chunks error:", err);
-
-		if (err instanceof Error) {
-			if (err.message.includes("RAG authentication token not found")) {
-				error(401, "RAG authentication failed. Please log in again.");
-			}
-		}
-
-		error(500, "Failed to fetch file chunks");
+		const message = err instanceof Error ? err.message : "Unknown error";
+		error(500, `Failed to fetch file chunks: ${message}`);
 	}
 };

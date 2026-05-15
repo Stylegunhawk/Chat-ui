@@ -98,8 +98,11 @@
 		metadata: Array<[string, unknown]>;
 	}
 
-	const parseToolOutputs = (outputs: ToolOutput[]): ParsedToolOutput[] =>
-		outputs.map((output) => ({
+	const isToolOutput = (value: unknown): value is ToolOutput =>
+		typeof value === "object" && value !== null && !Array.isArray(value);
+
+	const parseToolOutputs = (outputs: unknown[]): ParsedToolOutput[] =>
+		outputs.filter(isToolOutput).map((output) => ({
 			text: getOutputText(output),
 			images: getImageBlocks(output),
 			metadata: getMetadataEntries(output),
@@ -115,6 +118,7 @@
 	);
 
 	let elapsedSeconds = $state(0);
+	const generateDataProgressSeconds = 180;
 	$effect(() => {
 		if (isExecuting && toolFnName === "generate_data") {
 			const start = Date.now();
@@ -167,11 +171,11 @@
 					<span class="text-xs text-gray-500 dark:text-gray-400">{progressLabel}</span>
 				{:else if isExecuting && toolFnName === "generate_data"}
 					{@const elapsed = elapsedSeconds}
-					{@const progress = Math.min(elapsed / 90, 0.99)}
+					{@const progress = Math.min(elapsed / generateDataProgressSeconds, 0.99)}
 					{@const stageLabel =
-						elapsed < 30
+						elapsed < 60
 							? "Designing schema..."
-							: elapsed < 60
+							: elapsed < 120
 								? "Analyzing fields..."
 								: "Generating rows..."}
 					<div class="mt-1 flex w-full flex-col gap-1.5 pr-4">

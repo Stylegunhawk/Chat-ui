@@ -172,6 +172,7 @@ Use tools in the UI:
 
 - Open “MCP Servers” from the top‑right menu or from the `+` menu in the chat input to add servers, toggle them on, and run Health Check. The server card lists available tools.
 - When a model calls a tool, the message shows a compact “tool” block with parameters, a progress bar while running, and the result (or error). Results are also provided back to the model for follow‑up.
+- Tool calls use `MCP_TOOL_TIMEOUT_MS` for their SDK request timeout. The `generate_data` tool has a 10-minute minimum timeout because dataset generation can take longer than normal tool calls.
 
 Per‑model overrides:
 

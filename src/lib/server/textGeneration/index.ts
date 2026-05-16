@@ -64,6 +64,7 @@ async function* textGenerationWithoutTitle(
 			abortSignal: ctx.abortController.signal,
 			abortController: ctx.abortController,
 			promptedAt: ctx.promptedAt,
+			ragFiles: ctx.ragFiles,
 		});
 
 		let step = await mcpGen.next();

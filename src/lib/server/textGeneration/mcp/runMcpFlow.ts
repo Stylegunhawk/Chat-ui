@@ -31,7 +31,14 @@ import { AbortedGenerations } from "$lib/server/abortedGenerations";
 
 export type RunMcpFlowContext = Pick<
 	TextGenerationContext,
-	"model" | "conv" | "assistant" | "forceMultimodal" | "forceTools" | "provider" | "locals"
+	| "model"
+	| "conv"
+	| "assistant"
+	| "forceMultimodal"
+	| "forceTools"
+	| "provider"
+	| "locals"
+	| "ragFiles"
 > & { messages: EndpointMessage[] };
 
 // Return type: "completed" = MCP ran successfully, "not_applicable" = MCP didn't run, "aborted" = user aborted
@@ -50,6 +57,7 @@ export async function* runMcpFlow({
 	abortSignal,
 	abortController,
 	promptedAt,
+	ragFiles,
 }: RunMcpFlowContext & {
 	preprompt?: string;
 	abortSignal?: AbortSignal;
@@ -353,6 +361,11 @@ export async function* runMcpFlow({
 		}
 		if (typeof preprompt === "string" && preprompt.trim().length > 0) {
 			prepromptPieces.push(preprompt);
+		}
+		if (conv.ragEnabled === false) {
+			prepromptPieces.push(
+				"Note: Document search (RAG) is currently disabled. Do not call retrieve_docs. Work with conversation context only."
+			);
 		}
 		const mergedPreprompt = prepromptPieces.join("\n\n");
 		const hasSystemMessage = messagesOpenAI.length > 0 && messagesOpenAI[0]?.role === "system";
@@ -678,6 +691,7 @@ export async function* runMcpFlow({
 					processToolOutput,
 					abortSignal,
 					locals,
+					ragFiles,
 				});
 				let toolMsgCount = 0;
 				let toolRunCount = 0;

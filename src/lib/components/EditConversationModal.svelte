@@ -11,7 +11,7 @@
 
 	let { open = false, title = "", onclose, onsave }: Props = $props();
 
-	let newTitle = $state(title);
+	let newTitle = $state("");
 	let inputEl: HTMLInputElement | undefined = $state();
 
 	$effect(() => {

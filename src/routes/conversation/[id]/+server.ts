@@ -165,7 +165,9 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					})
 				)
 			),
-			availableFiles: z.optional(z.array(z.object({ id: z.string(), name: z.string() }))),
+			availableFiles: z.optional(
+				z.array(z.object({ id: z.string(), name: z.string(), url: z.string().optional() }))
+			),
 		})
 		.parse(JSON.parse(json));
 
@@ -230,8 +232,12 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 	// we will append tokens to the content of this message
 	let messageToWriteToId: Message["id"] | undefined = undefined;
+	// RAG chunks to attach to the assistant message for citation UI rendering
+	let ragChunksForAssistant: import("$lib/rag/client").ChatFileChunk[] | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
+	// RAG files for context injection (MCP/GitOps)
+	let mergedFilesForContext: import("$lib/rag/client").RagFileMetadata[] = [];
 
 	if (isRetry && messageId) {
 		// two cases, if we're retrying a user message with a newPrompt set,
@@ -311,92 +317,68 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 
 		// ============================================================================
-		// RAG INJECTION - Phase 1
+		// RAG METADATA — Always sync for MCP/GitOps (even if prompt injection is off)
 		// ============================================================================
 
 		try {
-			// Import RAG modules
-			const { ragClient } = await import("$lib/rag/client");
+			const { RAGClient } = await import("$lib/server/rag/client");
+			const { RagAgent } = await import("$lib/server/rag/ragAgent");
 			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
-			const { rewriteQueryWithHistory } = await import("$lib/server/rag/queryRewriter");
+			const { generateFromDefaultEndpoint } = await import(
+				"$lib/server/generateFromDefaultEndpoint"
+			);
 
-			// Extract user query (last message in tree)
+			// Initialize RAG client with session (JWT auth)
+			const ragClient = new RAGClient(undefined, locals.sessionId);
 			const userQuery = newPrompt?.trim();
-
-			// Get tenant ID from session (Google user ID)
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
-			if (conv.ragEnabled !== false && userQuery && tenantId) {
-				const { detectFileAnalysisShortcut } = await import("$lib/server/rag/queryRewriter");
-
-				// 1. Check for Direct File Analysis Shortcut
-				const shortcutFileId = detectFileAnalysisShortcut(userQuery, availableFiles || []);
-
-				let ragResponse: import("$lib/rag/client").SemanticSearchResponse | undefined = undefined;
-
-				if (shortcutFileId) {
-					console.log(`[RAG] Using direct file shortcut for fileId: ${shortcutFileId}`);
-					const targetFile = (availableFiles || []).find((f) => f.id === shortcutFileId);
-					const isPdf = targetFile?.name.toLowerCase().endsWith(".pdf");
-
-					// Implement requested offset strategy: skip first 3 chunks (boilerplate) for PDFs
-					const offset = isPdf ? 3 : 0;
-
-					try {
-						ragResponse = await ragClient.getFileChunks(
-							shortcutFileId,
-							tenantId.toString(),
-							5,
-							offset
-						);
-					} catch (e) {
-						console.warn("[RAG] Direct file fetch failed, falling back to semantic search", e);
-					}
+			if (tenantId) {
+				// ── Always Sync files for Tool Metadata (GitOps resolution) ──
+				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = availableFiles || [];
+				try {
+					const backendFiles =
+						(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
+					const mergedMap = new Map([...mergedFiles, ...backendFiles].map((f) => [f.id, f]));
+					mergedFiles = Array.from(mergedMap.values());
+				} catch (e) {
+					// Handle 401 or other network errors gracefully
+					console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
 				}
+				mergedFilesForContext = mergedFiles;
 
-				// 2. Default Path: Rewrite + Semantic Search (only if shortcut didn't run or failed)
-				if (!ragResponse) {
-					let rewriteQuery: string | undefined = undefined;
-					try {
-						// Build history WITHOUT current message (using parent messageId)
-						const historyForRewrite = messageId ? buildSubtree(conv, messageId) : [];
+				// ── RAG INJECTION: Only if enabled for conversation ─────────────
+				if (conv.ragEnabled !== false && userQuery) {
+					const ragAgent = new RagAgent(ragClient, generateFromDefaultEndpoint);
+					const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
 
-						rewriteQuery = await rewriteQueryWithHistory(userQuery, historyForRewrite, {
-							locals,
-							availableFiles,
-						});
-						if (rewriteQuery === userQuery) rewriteQuery = undefined;
-					} catch (e) {
-						console.warn("[RAG] Rewrite failed, using original query", e);
-					}
-
-					// Call backend RAG search
-					ragResponse = await ragClient.semanticSearch(
-						{
-							messageId: newUserMessageId.toString(),
-							userQuery,
-							rewriteQuery,
-							top_k: 5,
-						},
-						tenantId.toString()
+					// ── Run the RAG Agent ─────────────────────────────────────────────
+					const { plan, chunks } = await ragAgent.run(
+						userQuery,
+						mergedFiles,
+						historyForAgent,
+						newUserMessageId.toString(),
+						locals
 					);
-				}
 
-				// If chunks found, inject context directly into the user message
-				if (ragResponse && ragResponse.chunks.length > 0) {
-					const ragContextMessage = buildRagContextMessage(ragResponse.chunks);
+					// ── Only inject retrieved chunks into prompt (Skip NO_RAG meta-injection) ─
+					if (chunks.length > 0) {
+						const ragContextMessage = buildRagContextMessage(chunks, plan.strategy);
 
-					// Injection Strategy: Prefix the latest user message with context
-					// This is more robust than a separate system message for most models
-					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-					if (lastMsg && lastMsg.from === "user") {
-						lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+						// Attach chunks to assistant message for citation UI rendering
+						ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
+
+						// Prefix the latest user message with retrieved context
+						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+						if (lastMsg && lastMsg.from === "user") {
+							lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+						}
 					}
 				}
 			}
 		} catch (error) {
-			// NEVER block chat if RAG fails - degrade gracefully
-			console.error("[RAG] Search failed, proceeding without context:", error);
+			// NEVER block chat if RAG fails — degrade gracefully
+			console.error("[RAG] Metadata sync or injection failed:", error);
 		}
 
 		// ============================================================================
@@ -407,6 +389,10 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	const messageToWriteTo = conv.messages.find((message) => message.id === messageToWriteToId);
 	if (!messageToWriteTo) {
 		error(500, "Failed to create message");
+	}
+	// Attach RAG citation chunks to the assistant message so the frontend can render them
+	if (ragChunksForAssistant) {
+		messageToWriteTo.ragChunks = ragChunksForAssistant;
 	}
 	if (messagesForPrompt.length === 0) {
 		error(500, "Failed to create prompt");
@@ -673,6 +659,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 						config.isHuggingChat && !model.isRouter
 							? userSettings?.providerOverrides?.[model.id]
 							: undefined,
+					ragFiles: mergedFilesForContext,
 					locals,
 					abortController: ctrl,
 				};

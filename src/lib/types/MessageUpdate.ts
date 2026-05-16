@@ -55,6 +55,7 @@ export enum MessageToolUpdateType {
 	Error = "error",
 	ETA = "eta",
 	Progress = "progress",
+	Confirm = "confirm",
 }
 
 interface MessageToolUpdateBase<TSubtype extends MessageToolUpdateType> {
@@ -86,13 +87,25 @@ export interface MessageToolProgressUpdate
 	total?: number;
 	message?: string;
 }
+export interface MessageToolConfirmUpdate
+	extends MessageToolUpdateBase<MessageToolUpdateType.Confirm> {
+	operation: "commit" | "delete" | "merge" | "branch" | "push" | "update";
+	repoName: string;
+	filePath?: string;
+	content?: string;
+	query?: string;
+	commitMessage?: string;
+	branchName?: string;
+	sourceBranch?: string;
+}
 
 export type MessageToolUpdate =
 	| MessageToolCallUpdate
 	| MessageToolResultUpdate
 	| MessageToolErrorUpdate
 	| MessageToolEtaUpdate
-	| MessageToolProgressUpdate;
+	| MessageToolProgressUpdate
+	| MessageToolConfirmUpdate;
 
 export enum MessageReasoningUpdateType {
 	Stream = "stream",

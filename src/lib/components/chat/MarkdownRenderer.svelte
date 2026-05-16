@@ -15,7 +15,7 @@
 
 	let { content, sources = [], loading = false }: Props = $props();
 
-	let blocks: BlockToken[] = $state(processBlocksSync(content, sources));
+	let blocks: BlockToken[] = $state([]);
 	let worker: Worker | null = null;
 	let latestRequestId = 0;
 

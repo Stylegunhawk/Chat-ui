@@ -29,9 +29,16 @@
 		submitLabel = "Add Server",
 	}: Props = $props();
 
-	let name = $state(initialName);
-	let url = $state(initialUrl);
-	let headers = $state<KeyValuePair[]>(initialHeaders.length > 0 ? [...initialHeaders] : []);
+	let name = $state("");
+	let url = $state("");
+	let headers = $state<KeyValuePair[]>([]);
+
+	$effect.pre(() => {
+		if ($state.snapshot(name) === "" && initialName) name = initialName;
+		if ($state.snapshot(url) === "" && initialUrl) url = initialUrl;
+		if ($state.snapshot(headers).length === 0 && initialHeaders.length > 0)
+			headers = [...initialHeaders];
+	});
 	let showHeaderValues = $state<Record<number, boolean>>({});
 	let error = $state<string | null>(null);
 

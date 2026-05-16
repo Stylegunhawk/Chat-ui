@@ -51,7 +51,7 @@
 		errorMsg = "";
 		try {
 			// Use centralized client
-			files = await ragClient.listFiles(getTenantId());
+			files = await ragClient.listFiles();
 
 			// Check if any file is still processing
 			// finishEmbedding is false while processing
@@ -87,7 +87,7 @@
 			const fileArray = Array.from(selectedFiles);
 
 			// Use centralized client
-			await ragClient.uploadFiles(fileArray, getTenantId());
+			await ragClient.uploadFiles(fileArray);
 
 			// Reload file list after successful upload
 			await loadFiles();
@@ -108,7 +108,7 @@
 
 		try {
 			// Use centralized client
-			await ragClient.deleteFile(fileId, getTenantId());
+			await ragClient.deleteFile(fileId);
 
 			// Reload file list
 			await loadFiles();

@@ -1,59 +1,73 @@
 import { env } from "$env/dynamic/private";
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
+import { getRAGTokenFromSession } from "$lib/server/rag/auth";
 
-export const POST: RequestHandler = async ({ request, locals, fetch }) => {
-	const userId = locals.user?._id?.toString() || locals.sessionId;
-
-	if (!userId) {
-		error(401, "Unauthorized");
+export const POST: RequestHandler = async ({ request, locals }) => {
+	// Block anonymous access - require authenticated user
+	if (!locals.user?._id) {
+		error(401, "Authentication required for RAG operations");
 	}
 
-	// Use internal docker network URL if available, otherwise localhost
-	const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
+	const sessionId = locals.sessionId;
+	if (!sessionId) {
+		error(401, "No session found");
+	}
 
 	try {
-		// Get the form data from the request
-		const formData = await request.formData();
-
-		// Note: We don't need to manually reconstruct the FormData if we pass the original body
-		// BUT: SvelteKit's request.formData() consumes the body.
-		// AND: passing the FormData object directly to fetch works in Node.js environments
-		// if the node-fetch version supports it, or we might need to handle headers carefully.
-		// Generally, creating a new FormData and appending is safest for forwarding.
-
-		const payload = new FormData();
-		const collection = formData.get("collection") as string;
-		if (collection) payload.append("collection", collection);
-
-		const files = formData.getAll("files");
-		for (const file of files) {
-			payload.append("files", file);
+		// Get JWT from session
+		const jwt = await getRAGTokenFromSession(sessionId);
+		if (!jwt) {
+			error(401, "RAG authentication token not found. Please log in again.");
 		}
 
-		console.log(`Proxying upload for user ${userId} to ${RAG_BASE_URL}`);
+		// Get the form data from the request
+		const formData = await request.formData();
+		const collection = (formData.get("collection") as string) || "default";
+		const files = formData.getAll("files") as File[];
+
+		if (!files.length) {
+			error(400, "No files provided");
+		}
+
+		console.log(`[RAG] Uploading ${files.length} files for user ${locals.user._id}`);
+
+		// Call RAG backend directly
+		const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
+
+		// Rebuild FormData for backend call
+		const payload = new FormData();
+		payload.append("collection", collection);
+		files.forEach((file) => payload.append("files", file));
 
 		const response = await fetch(`${RAG_BASE_URL}/api/v1/rag/file/upload`, {
 			method: "POST",
 			headers: {
-				"X-User-ID": userId,
-				// Do NOT set Content-Type here, let fetch/FormData handle the boundary
+				Authorization: `Bearer ${jwt}`,
 			},
 			body: payload,
 		});
 
 		if (!response.ok) {
-			const text = await response.text();
-			console.error(`RAG Upload Error ${response.status}: ${text}`);
-			error(response.status, text || response.statusText);
+			const errorText = await response.text();
+			console.error(`[RAG] Upload error ${response.status}: ${errorText}`);
+			error(response.status, errorText || "Failed to upload files");
 		}
 
-		const data = await response.json();
-		return new Response(JSON.stringify(data), {
+		const result = await response.json();
+
+		return new Response(JSON.stringify(result), {
 			headers: { "Content-Type": "application/json" },
 		});
 	} catch (err) {
-		console.error("RAG Proxy Extension Error:", err);
+		console.error("[RAG] Upload error:", err);
+
+		if (err instanceof Error) {
+			if (err.message.includes("RAG authentication token not found")) {
+				error(401, "RAG authentication failed. Please log in again.");
+			}
+		}
+
 		if (err && typeof err === "object" && "status" in err) throw err;
 		const message = err instanceof Error ? err.message : "Unknown error";
 		error(500, `Failed to upload files: ${message}`);

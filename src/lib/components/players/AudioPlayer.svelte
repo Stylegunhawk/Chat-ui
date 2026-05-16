@@ -65,6 +65,12 @@
 				<span class="text-xs">{format(time)}</span>
 				<div
 					class="relative h-2 flex-1 rounded-full bg-gray-200 dark:bg-gray-700"
+					role="slider"
+					aria-label="Seek slider"
+					aria-valuemin="0"
+					aria-valuemax={duration}
+					aria-valuenow={time}
+					tabindex="0"
 					onpointerdown={() => {
 						paused = true;
 					}}

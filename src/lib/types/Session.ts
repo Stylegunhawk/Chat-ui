@@ -18,5 +18,10 @@ export interface Session extends Timestamps {
 			expiresAt: Date;
 		};
 		refreshToken?: string;
+		idToken?: string;
 	};
+
+	ragToken?: string;
+	ragRefreshToken?: string;
+	ragTokenExpiresAt?: Date;
 }

@@ -46,6 +46,7 @@
 		onsubmit?: () => void;
 		ragEnabled?: boolean;
 		onragtoggle?: (enabled: boolean) => void;
+		ragFiles?: import("$lib/rag/client").RagFileMetadata[];
 		onragfilesrefresh?: () => Promise<void>;
 	}
 
@@ -65,6 +66,7 @@
 		onsubmit,
 		ragEnabled = true,
 		onragtoggle,
+		ragFiles = [],
 		onragfilesrefresh,
 	}: Props = $props();
 

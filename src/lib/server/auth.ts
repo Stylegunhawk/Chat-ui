@@ -207,6 +207,8 @@ export function tokenSetToSessionOauth(tokenSet: TokenSet): Session["oauth"] {
 				: addWeeks(new Date(), 2),
 		},
 		refreshToken: tokenSet.refresh_token || undefined,
+		// Store ID token for RAG authentication if available
+		idToken: tokenSet.id_token as string | undefined,
 	};
 }
 

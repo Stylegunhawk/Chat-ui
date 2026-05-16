@@ -1,14 +1,14 @@
-import { env } from "$env/dynamic/public";
-
 /**
  * DevForge RAG API Client
- * Handles communication with backend RAG endpoints
+ * Handles communication with RAG endpoints via SvelteKit proxy
  *
  * IMMUTABLE BACKEND CONTRACT - DO NOT MODIFY SCHEMAS
  */
 
-// Use public env var for client-side compatibility, fallback to localhost:8000
-const RAG_BASE_URL = env.PUBLIC_RAG_BASE_URL || "http://localhost:8000";
+// All RAG calls go through SvelteKit proxy routes for security
+const PROXY_BASE_URL = "/api/v1/rag";
+
+export { PROXY_BASE_URL };
 
 // ============================================================================
 // TYPE DEFINITIONS (Match backend schemas exactly)
@@ -74,24 +74,20 @@ export interface RagFileMetadata {
 export class RAGClient {
 	private baseUrl: string;
 
-	constructor(baseUrl: string = RAG_BASE_URL) {
+	constructor(baseUrl: string = PROXY_BASE_URL) {
 		this.baseUrl = baseUrl;
 	}
 
 	/**
 	 * Semantic search for chat context
 	 *
-	 * CRITICAL: Must include X-User-ID header for tenant isolation
+	 * Goes through SvelteKit proxy which adds JWT authentication
 	 */
-	async semanticSearch(
-		request: SemanticSearchRequest,
-		userId: string
-	): Promise<SemanticSearchResponse> {
-		const response = await fetch(`${this.baseUrl}/api/v1/rag/chunk/semanticSearchForChat`, {
+	async semanticSearch(request: SemanticSearchRequest): Promise<SemanticSearchResponse> {
+		const response = await fetch(`${this.baseUrl}/chunk/semanticSearchForChat`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"X-User-ID": userId, // CRITICAL: Tenant isolation
 			},
 			body: JSON.stringify({
 				messageId: request.messageId,
@@ -114,17 +110,11 @@ export class RAGClient {
 	 */
 	async getFileChunks(
 		fileId: string,
-		tenantId: string,
 		limit: number = 5,
 		offset: number = 0
 	): Promise<SemanticSearchResponse> {
 		const response = await fetch(
-			`${this.baseUrl}/api/v1/rag/file/${fileId}/chunks?limit=${limit}&offset=${offset}`,
-			{
-				headers: {
-					"X-User-ID": tenantId,
-				},
-			}
+			`${this.baseUrl}/file/${fileId}/chunks?limit=${limit}&offset=${offset}`
 		);
 
 		if (!response.ok) {
@@ -141,14 +131,10 @@ export class RAGClient {
 	}
 
 	/**
-	 * List all files for a tenant
+	 * List all files for authenticated user
 	 */
-	async listFiles(tenantId: string): Promise<RagFileMetadata[]> {
-		const response = await fetch(`${this.baseUrl}/api/v1/rag/files`, {
-			headers: {
-				"X-User-ID": tenantId,
-			},
-		});
+	async listFiles(): Promise<RagFileMetadata[]> {
+		const response = await fetch(`${this.baseUrl}/files`);
 
 		if (!response.ok) {
 			throw new Error(`Failed to list files: ${response.statusText}`);
@@ -158,11 +144,10 @@ export class RAGClient {
 	}
 
 	/**
-	 * Upload files to RAG system
+	 * Upload files to RAG system via proxy
 	 */
 	async uploadFiles(
 		files: File[],
-		tenantId: string,
 		collection: string = "default"
 	): Promise<{ file_ids: string[] }> {
 		const formData = new FormData();
@@ -170,12 +155,8 @@ export class RAGClient {
 		files.forEach((file) => formData.append("files", file));
 		formData.append("collection", collection);
 
-		const response = await fetch(`${this.baseUrl}/api/v1/rag/file/upload`, {
+		const response = await fetch(`${this.baseUrl}/file/upload`, {
 			method: "POST",
-			headers: {
-				"X-User-ID": tenantId,
-				// Content-Type is set automatically by browser with boundary
-			},
 			body: formData,
 		});
 
@@ -188,14 +169,11 @@ export class RAGClient {
 	}
 
 	/**
-	 * Delete a file from RAG system
+	 * Delete a file from RAG system via proxy
 	 */
-	async deleteFile(fileId: string, tenantId: string): Promise<void> {
-		const response = await fetch(`${this.baseUrl}/api/v1/rag/file/${fileId}`, {
+	async deleteFile(fileId: string): Promise<void> {
+		const response = await fetch(`${this.baseUrl}/file/${fileId}`, {
 			method: "DELETE",
-			headers: {
-				"X-User-ID": tenantId,
-			},
 		});
 
 		if (!response.ok) {

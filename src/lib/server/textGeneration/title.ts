@@ -14,7 +14,10 @@ export async function* generateTitleForConversation(
 		// HACK: detect if the conversation is new
 		if (conv.title !== "New Chat" || !userMessage) return;
 
-		const prompt = userMessage.content;
+		// Strip prepended RAG context — all injection paths use "\n\n---\n\n" as separator
+		const prompt = userMessage.content.includes("\n\n---\n\n")
+			? userMessage.content.split("\n\n---\n\n").at(-1)!.trim()
+			: userMessage.content;
 		const modelForTitle = config.TASK_MODEL?.trim() ? config.TASK_MODEL : conv.model;
 		const title = (await generateTitle(prompt, modelForTitle, locals)) ?? "New Chat";
 
@@ -60,7 +63,7 @@ User: "请解释Transformer是如何工作的" -> Transformer 工作原理
 User: "tell me more about you" -> About the assistant
 Return only the title text.`,
 			generateSettings: {
-				max_tokens: 24,
+				max_tokens: 200,
 				temperature: 0,
 			},
 			modelId,
@@ -69,10 +72,12 @@ Return only the title text.`,
 	)
 		.then((summary) => {
 			const firstFive = prompt.split(/\s+/g).slice(0, 5).join(" ");
-			// Strip <think>...</think> blocks — Ollama reasoning models (DeepSeek-R1 etc.)
-			// include their chain-of-thought in generated_text. The title must be clean text.
+			// Strip <think> blocks — reasoning models (DeepSeek-R1, QwQ etc.) include
+			// chain-of-thought in generated_text. Handle both complete blocks and
+			// truncated ones (no closing tag) caused by max_tokens cutoff.
 			const stripped = String(summary ?? "")
 				.replace(/<think>[\s\S]*?<\/think>/gi, "")
+				.replace(/<think>[\s\S]*/gi, "")
 				.trim();
 			return stripped || firstFive;
 		})

@@ -1,6 +1,7 @@
 import { error } from "@sveltejs/kit";
 import type { RequestEvent } from "@sveltejs/kit";
 import { getRAGTokenFromSession } from "$lib/server/rag/auth";
+import { RAG_BASE_URL } from "$lib/server/rag/client";
 
 export const GET = async ({ params, locals, url }: RequestEvent) => {
 	// Block anonymous access - require authenticated user
@@ -31,7 +32,6 @@ export const GET = async ({ params, locals, url }: RequestEvent) => {
 		console.log(`[RAG] Getting chunks for file ${fileId} for user ${locals.user._id}`);
 
 		// Call RAG backend directly
-		const RAG_BASE_URL = process.env.RAG_BASE_URL || "http://localhost:8000";
 		const response = await fetch(
 			`${RAG_BASE_URL}/api/v1/rag/file/${fileId}/chunks?limit=${limit}&offset=${offset}`,
 			{

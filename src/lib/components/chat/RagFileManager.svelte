@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
+	import { slide } from "svelte/transition";
 	import { page } from "$app/state";
 	import Modal from "../Modal.svelte";
 	import CarbonDocument from "~icons/carbon/document";
 	import CarbonUpload from "~icons/carbon/upload";
 	import CarbonTrashCan from "~icons/carbon/trash-can";
+	import CarbonWarningAlt from "~icons/carbon/warning-alt";
 	import EosIconsLoading from "~icons/eos-icons/loading";
 	import { browserRagClient as ragClient } from "$lib/rag/browserClient";
 	import type { RagFileMetadata } from "$lib/rag/client";
@@ -18,7 +20,9 @@
 	let files = $state<RagFileMetadata[]>([]);
 	let loading = $state(false);
 	let uploading = $state(false);
-	let errorMsg = $state("");
+	let deleting = $state(false);
+	let fileToDelete = $state<RagFileMetadata | null>(null);
+	let errorMsg = $state<string | null>(null);
 	let fileInputEl: HTMLInputElement | undefined = $state();
 	let pollInterval: ReturnType<typeof setInterval> | undefined = undefined;
 
@@ -48,7 +52,7 @@
 	// Fetch file list from backend
 	async function loadFiles(silent = false) {
 		if (!silent) loading = true;
-		errorMsg = "";
+		errorMsg = null;
 		try {
 			// Use centralized client
 			files = await ragClient.listFiles();
@@ -80,7 +84,7 @@
 		if (!selectedFiles || selectedFiles.length === 0) return;
 
 		uploading = true;
-		errorMsg = "";
+		errorMsg = null;
 
 		try {
 			// Convert FileList to Array
@@ -102,19 +106,20 @@
 		}
 	}
 
-	// Delete file
-	async function deleteFile(fileId: string) {
-		if (!confirm("Are you sure you want to delete this file?")) return;
-
+	// Delete file — called after user confirms in the inline dialog
+	async function confirmDelete() {
+		if (!fileToDelete) return;
+		deleting = true;
+		errorMsg = null;
 		try {
-			// Use centralized client
-			await ragClient.deleteFile(fileId);
-
-			// Reload file list
+			await ragClient.deleteFile(fileToDelete.id);
+			fileToDelete = null;
 			await loadFiles();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Delete failed");
+			errorMsg = e instanceof Error ? e.message : "Delete failed";
 			console.error("[RAG] Delete failed:", e);
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -285,10 +290,11 @@
 
 								<!-- Delete Button -->
 								<button
-									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-red-600 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400"
-									onclick={() => deleteFile(file.id)}
+									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 {fileToDelete?.id === file.id ? 'text-red-600 dark:text-red-400' : ''}"
+									onclick={() => (fileToDelete = file)}
 									aria-label="Delete file"
 									title="Delete file"
+									disabled={deleting}
 								>
 									<CarbonTrashCan class="size-5" />
 								</button>
@@ -297,6 +303,45 @@
 					</div>
 				{/if}
 			</div>
+			<!-- Delete confirmation panel -->
+			{#if fileToDelete}
+				<div
+					transition:slide={{ duration: 180 }}
+					class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800/60 dark:bg-red-900/20"
+				>
+					<div class="flex items-start gap-3">
+						<CarbonWarningAlt class="mt-0.5 size-5 flex-none text-red-500 dark:text-red-400" />
+						<div class="flex-1">
+							<p class="text-sm font-medium text-red-700 dark:text-red-300">Delete file?</p>
+							<p class="mt-0.5 text-xs text-red-600/80 dark:text-red-400/80">
+								<span class="font-medium">{fileToDelete.name}</span> will be permanently removed and
+								cannot be recovered.
+							</p>
+						</div>
+					</div>
+					<div class="mt-3 flex justify-end gap-2">
+						<button
+							class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+							onclick={() => (fileToDelete = null)}
+							disabled={deleting}
+						>
+							Cancel
+						</button>
+						<button
+							class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+							onclick={confirmDelete}
+							disabled={deleting}
+						>
+							{#if deleting}
+								<EosIconsLoading class="size-3.5" />
+								Deleting…
+							{:else}
+								Delete
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/snippet}
 </Modal>

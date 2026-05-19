@@ -25,6 +25,7 @@ export interface ChatFileChunk {
 	pageNumber?: number | null;
 	role: "entry" | "dependency" | "supporting";
 	expanded_from?: string;
+	is_graph_expansion: boolean;
 }
 
 export interface SemanticSearchRequest {
@@ -38,6 +39,7 @@ export interface SemanticSearchRequest {
 export interface SemanticSearchResponse {
 	chunks: ChatFileChunk[];
 	queryId: string;
+	expansion_count: number;
 	// relevant_docs might remain if backend sends it, but we focus on chunks
 }
 
@@ -126,7 +128,7 @@ export class RAGClient {
 		// Backend might return chunks array directly or wrapped in SemanticSearchResponse
 		const data = await response.json();
 		if (Array.isArray(data)) {
-			return { chunks: data, queryId: `file_${fileId}` };
+			return { chunks: data, queryId: `file_${fileId}`, expansion_count: 0 };
 		}
 		return data;
 	}

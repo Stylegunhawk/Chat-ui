@@ -1,7 +1,7 @@
-import { env } from "$env/dynamic/private";
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { getRAGTokenFromSession } from "$lib/server/rag/auth";
+import { RAG_BASE_URL } from "$lib/server/rag/client";
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	// Block anonymous access - require authenticated user
@@ -29,7 +29,6 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 		console.log(`[RAG] Deleting file ${fileId} for user ${locals.user._id}`);
 
 		// Call RAG backend directly
-		const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
 		const response = await fetch(`${RAG_BASE_URL}/api/v1/rag/file/${fileId}`, {
 			method: "DELETE",
 			headers: {

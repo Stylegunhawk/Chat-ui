@@ -234,6 +234,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	let messageToWriteToId: Message["id"] | undefined = undefined;
 	// RAG chunks to attach to the assistant message for citation UI rendering
 	let ragChunksForAssistant: import("$lib/rag/client").ChatFileChunk[] | undefined = undefined;
+	let ragStrategyForAssistant: import("$lib/server/rag/ragAgent").RagStrategy | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
 	// RAG files for context injection (MCP/GitOps)
@@ -333,15 +334,18 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 			if (tenantId) {
 				// ── Always Sync files for Tool Metadata (GitOps resolution) ──
-				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = availableFiles || [];
+				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = [];
 				try {
 					const backendFiles =
 						(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
-					const mergedMap = new Map([...mergedFiles, ...backendFiles].map((f) => [f.id, f]));
+					// seed with thin client refs first; backend entries (full shape) win on duplicate ids
+					const seed = (availableFiles || []) as unknown as import("$lib/rag/client").RagFileMetadata[];
+					const mergedMap = new Map([...seed, ...backendFiles].map((f) => [f.id, f]));
 					mergedFiles = Array.from(mergedMap.values());
 				} catch (e) {
 					// Handle 401 or other network errors gracefully
 					console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
+					mergedFiles = (availableFiles || []) as unknown as import("$lib/rag/client").RagFileMetadata[];
 				}
 				mergedFilesForContext = mergedFiles;
 
@@ -349,6 +353,21 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 				if (conv.ragEnabled !== false && userQuery) {
 					const ragAgent = new RagAgent(ragClient);
 					const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
+
+					// ── Embedding-ready guard ─────────────────────────────────────────────────
+					// Warn LLM when files are still being processed so it can explain to user
+					const notReadyFiles = mergedFiles.filter((f) => f.finishEmbedding === false);
+					if (notReadyFiles.length > 0) {
+						const referencedNotReady = notReadyFiles.find((f) =>
+							userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
+						);
+						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+						if (referencedNotReady && lastMsg?.from === "user") {
+							lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
+						} else if (lastMsg?.from === "user") {
+							lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
+						}
+					}
 
 					// ── Run the RAG Agent ─────────────────────────────────────────────
 					const { plan, chunks } = await ragAgent.run(
@@ -366,6 +385,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 						// Attach chunks to assistant message for citation UI rendering
 						ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
+						ragStrategyForAssistant = plan.strategy;
 
 						// Prefix the latest user message with retrieved context
 						if (lastMsg && lastMsg.from === "user") {
@@ -397,6 +417,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 	// Attach RAG citation chunks to the assistant message so the frontend can render them
 	if (ragChunksForAssistant) {
 		messageToWriteTo.ragChunks = ragChunksForAssistant;
+		messageToWriteTo.ragStrategy = ragStrategyForAssistant;
 	}
 	if (messagesForPrompt.length === 0) {
 		error(500, "Failed to create prompt");

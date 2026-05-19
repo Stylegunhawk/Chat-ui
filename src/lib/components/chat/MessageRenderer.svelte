@@ -92,5 +92,5 @@
 	(set by +server.ts when RAG retrieval returned results).
 -->
 {#if message.from === "assistant" && message.ragChunks && message.ragChunks.length > 0}
-	<RagReferenceCard chunks={message.ragChunks} />
+	<RagReferenceCard chunks={message.ragChunks} expansionCount={message.ragChunks.filter(c => c.is_graph_expansion).length} strategy={message.ragStrategy} />
 {/if}

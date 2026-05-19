@@ -13,6 +13,7 @@ describe("ChatFileChunk type contract", () => {
 			similarity: null,
 			role: "dependency",
 			expanded_from: "utils.py::decode_jwt",
+			is_graph_expansion: true,
 		};
 		expect(chunk.similarity).toBeNull();
 		expect(chunk.expanded_from).toBe("utils.py::decode_jwt");
@@ -88,5 +89,23 @@ describe("RagAgent.classify — 3-bucket router", () => {
 		const agent = new RagAgent(noopClient);
 		const plan = agent.classify("explain the validate function in auth.py", files, []);
 		expect(plan.strategy).toBe("SEARCH");
+	});
+
+	test("routes single-file + summarize verb with no explicit name → SUMMARIZE_FILE", () => {
+		const singleFile: RagFileContext[] = [{ id: "f1", name: "service.ts", chunkCount: 12 }];
+		const agent = new RagAgent(noopClient);
+		const plan = agent.classify("summarize this", singleFile, []);
+		expect(plan.strategy).toBe("SUMMARIZE_FILE");
+		expect(plan.filePlans[0].fileId).toBe("f1");
+	});
+
+	test("does NOT route to SUMMARIZE_FILE when multi-file + no explicit name", () => {
+		const multiFiles: RagFileContext[] = [
+			{ id: "f1", name: "a.ts", chunkCount: 8 },
+			{ id: "f2", name: "b.ts", chunkCount: 8 },
+		];
+		const agent = new RagAgent(noopClient);
+		const plan = agent.classify("summarize this", multiFiles, []);
+		expect(plan.strategy).toBe("SUMMARIZE_ALL");
 	});
 });

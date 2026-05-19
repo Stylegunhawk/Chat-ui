@@ -1,5 +1,6 @@
 import { error } from "@sveltejs/kit";
 import { getRAGTokenFromSession } from "$lib/server/rag/auth";
+import { RAG_BASE_URL } from "$lib/server/rag/client";
 import type { RequestEvent } from "@sveltejs/kit";
 
 export async function POST({ request, locals }: RequestEvent) {
@@ -23,7 +24,6 @@ export async function POST({ request, locals }: RequestEvent) {
 		const body = await request.json();
 
 		// Call RAG backend directly
-		const RAG_BASE_URL = process.env.RAG_BASE_URL || "http://localhost:8000";
 		const response = await fetch(`${RAG_BASE_URL}/api/v1/rag/chunk/semanticSearchForChat`, {
 			method: "POST",
 			headers: {

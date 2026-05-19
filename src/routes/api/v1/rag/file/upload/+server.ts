@@ -1,7 +1,7 @@
-import { env } from "$env/dynamic/private";
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { getRAGTokenFromSession } from "$lib/server/rag/auth";
+import { RAG_BASE_URL } from "$lib/server/rag/client";
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	// Block anonymous access - require authenticated user
@@ -33,8 +33,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		console.log(`[RAG] Uploading ${files.length} files for user ${locals.user._id}`);
 
 		// Call RAG backend directly
-		const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
-
 		// Rebuild FormData for backend call
 		const payload = new FormData();
 		payload.append("collection", collection);

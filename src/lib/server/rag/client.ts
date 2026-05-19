@@ -5,6 +5,8 @@
  * IMMUTABLE BACKEND CONTRACT - DO NOT MODIFY SCHEMAS
  */
 
+import type { ChatFileChunk, SemanticSearchResponse, RagFileMetadata } from "$lib/rag/client";
+
 const RAG_BASE_URL = process.env.RAG_BASE_URL || "http://localhost:8000";
 
 export { RAG_BASE_URL };
@@ -13,29 +15,12 @@ export { RAG_BASE_URL };
 // TYPE DEFINITIONS (Match backend schemas exactly)
 // ============================================================================
 
-export interface ChatFileChunk {
-	id: string;
-	fileId: string;
-	filename: string;
-	fileType: string;
-	fileUrl: string;
-	text: string;
-	similarity: number;
-	pageNumber?: number | null;
-	role: "entry" | "dependency" | "supporting";
-}
-
 export interface SemanticSearchRequest {
 	messageId: string;
 	userQuery: string;
 	rewriteQuery?: string;
 	top_k?: number;
 	fileIds?: string[];
-}
-
-export interface SemanticSearchResponse {
-	chunks: ChatFileChunk[];
-	queryId: string;
 }
 
 export interface FileUploadResponse {
@@ -229,7 +214,7 @@ export class RAGClient {
 	/**
 	 * List all files for authenticated user
 	 */
-	async listFiles(): Promise<unknown[]> {
+	async listFiles(): Promise<RagFileMetadata[]> {
 		const jwt = await this.getJWT();
 		const response = await this.makeRequest(`${this.baseUrl}/api/v1/rag/files`, {
 			method: "GET",
@@ -242,13 +227,13 @@ export class RAGClient {
 			throw new Error(`Files list failed: ${response.status}`);
 		}
 
-		return response.json();
+		return response.json() as Promise<RagFileMetadata[]>;
 	}
 
 	/**
 	 * Get chunks for a specific file
 	 */
-	async getFileChunks(fileId: string, limit: number = 5, offset: number = 0): Promise<unknown> {
+	async getFileChunks(fileId: string, limit: number = 5, offset: number = 0): Promise<SemanticSearchResponse> {
 		const jwt = await this.getJWT();
 		const response = await this.makeRequest(
 			`${this.baseUrl}/api/v1/rag/file/${fileId}/chunks?limit=${limit}&offset=${offset}`,
@@ -263,13 +248,13 @@ export class RAGClient {
 			throw new Error(`File chunks failed: ${response.status}`);
 		}
 
-		return response.json();
+		return response.json() as Promise<SemanticSearchResponse>;
 	}
 
 	/**
 	 * Delete file from RAG
 	 */
-	async deleteFile(fileId: string): Promise<unknown> {
+	async deleteFile(fileId: string): Promise<void> {
 		const jwt = await this.getJWT();
 		const response = await this.makeRequest(`${this.baseUrl}/api/v1/rag/file/${fileId}`, {
 			method: "DELETE",
@@ -282,7 +267,7 @@ export class RAGClient {
 			throw new Error(`File deletion failed: ${response.status}`);
 		}
 
-		return response.json();
+		return;
 	}
 }
 

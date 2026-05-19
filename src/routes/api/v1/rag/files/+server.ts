@@ -1,4 +1,3 @@
-import { env } from "$env/dynamic/private";
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
@@ -6,6 +5,7 @@ import {
 	storeRAGTokenInSession,
 	authenticateWithRAG,
 } from "$lib/server/rag/auth";
+import { RAG_BASE_URL } from "$lib/server/rag/client";
 import { collections } from "$lib/server/database";
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -48,7 +48,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 		}
 
 		// Call RAG backend directly
-		const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
 		const response = await fetch(`${RAG_BASE_URL}/api/v1/rag/files`, {
 			method: "GET",
 			headers: {

@@ -318,12 +318,16 @@ function serializeMediaNode(node: HtmlNode, state: { hasDisallowedTag: boolean }
 	return "";
 }
 
+// Safe void elements with no attributes and no XSS risk — pass through directly
+const SAFE_VOID_HTML_REGEX = /^<br\s*\/?>$/i;
+
 /**
  * Sanitizes HTML to allow only video/audio/source tags with safe attributes.
  * Uses htmlparser2 which works in Web Workers (no DOM needed).
  * If any disallowed tags are found, escapes the entire input.
  */
 function sanitizeHtmlForMultimedia(html: string): string {
+	if (SAFE_VOID_HTML_REGEX.test(html.trim())) return "<br>";
 	if (!MULTIMEDIA_HTML_REGEX.test(html)) {
 		return escapeHTML(html);
 	}

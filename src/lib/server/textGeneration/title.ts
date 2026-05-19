@@ -69,9 +69,12 @@ Return only the title text.`,
 	)
 		.then((summary) => {
 			const firstFive = prompt.split(/\s+/g).slice(0, 5).join(" ");
-			const trimmed = String(summary ?? "").trim();
-			// Fallback: if empty, return first five words only (no emoji)
-			return trimmed || firstFive;
+			// Strip <think>...</think> blocks — Ollama reasoning models (DeepSeek-R1 etc.)
+			// include their chain-of-thought in generated_text. The title must be clean text.
+			const stripped = String(summary ?? "")
+				.replace(/<think>[\s\S]*?<\/think>/gi, "")
+				.trim();
+			return stripped || firstFive;
 		})
 		.catch((e) => {
 			logger.error(e, "Error generating title");

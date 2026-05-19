@@ -33,7 +33,7 @@ export function buildToolPreprompt(tools: OpenAiTool[], ragEnabled = true): stri
 		`5. REPORT: Summarize what was done, with links/results. Be concise.`,
 
 		`## TOOL USAGE RULES`,
-		`- github_operation: Use for ALL GitHub tasks. Supports natural language queries. For HIGH risk ops (delete_branch), pass confirmed=true in context. For CRITICAL ops (delete_repo), pass confirmed=true + reason.`,
+		`- github_operation: Use for ALL GitHub tasks. Supports natural language queries and structured operation calls. The server enforces a risk gate — HIGH ops (create_repo, delete_branch, create_release, trigger_workflow, webhooks) and CRITICAL ops (delete_repo, merge to production, delete protected branches) require user confirmation. Do NOT pass risk_confirmed or risk_reason yourself; the UI handles confirmation automatically.`,
 		`- retrieve_docs: Use ONLY when you need to understand file content to complete a task. Skip for general questions.`,
 		`- generate_data: Use for synthetic dataset generation. Specify domain and schema clearly.`,
 		`- rerank_docs: Use after retrieve_docs when result quality matters.`,

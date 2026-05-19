@@ -140,9 +140,7 @@
 			<!-- Chunk rows -->
 			<div class="max-h-72 divide-y divide-gray-100 overflow-y-auto dark:divide-gray-800">
 				{#each activeChunks as chunk (chunk.id)}
-					{@const style = scoreStyle(chunk.similarity ?? 1)}
 					{@const Icon = fileIcon(chunk.filename)}
-					{@const pct = (chunk.similarity * 100).toFixed(0)}
 					<div class="flex flex-col gap-1.5 px-3 py-2.5">
 						<!-- File name + role badge -->
 						<div class="flex items-center justify-between gap-2">
@@ -160,13 +158,27 @@
 							</span>
 						</div>
 
-						<!-- Relevance bar -->
-						<div class="flex items-center gap-2">
-							<div class="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-								<div class="h-full rounded-full transition-all {style.bar}" style="width:{pct}%"></div>
+						<!-- Graph provenance label (dependency chunks expanded from another entity) -->
+						{#if chunk.role === "dependency" && chunk.expanded_from}
+							{@const shortQid = chunk.expanded_from.split("::").slice(-2).join("::")}
+							<span class="text-[10px] text-blue-500 dark:text-blue-400" title="Graph-expanded from {chunk.expanded_from}">
+								via {shortQid}
+							</span>
+						{/if}
+
+						<!-- Relevance bar — hidden for graph-expanded chunks (no similarity score) -->
+						{#if chunk.similarity !== null && chunk.similarity !== undefined}
+							{@const style = scoreStyle(chunk.similarity)}
+							{@const pct = (chunk.similarity * 100).toFixed(0)}
+							<div class="flex items-center gap-2">
+								<div class="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+									<div class="h-full rounded-full transition-all {style.bar}" style="width:{pct}%"></div>
+								</div>
+								<span class="w-7 text-right text-[10px] font-medium {style.label}">{pct}%</span>
 							</div>
-							<span class="w-7 text-right text-[10px] font-medium {style.label}">{pct}%</span>
-						</div>
+						{:else}
+							<span class="text-[10px] text-gray-400 dark:text-gray-500">graph expanded</span>
+						{/if}
 
 						<!-- Text preview -->
 						<p class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">

@@ -1,250 +1,205 @@
 /**
- * RAG Agent — Frontend Orchestrator
+ * RAG Agent — 3-Bucket Frontend Router
  *
- * The single entry point for all RAG context retrieval logic.
+ * Classifies queries into 3 buckets (~0ms, regex only):
+ *   NO_RAG        — metadata query, answer from file list, no backend call
+ *   SUMMARIZE_FILE — sequential chunk read of one named file (getFileChunks)
+ *   SUMMARIZE_ALL  — sequential chunk reads across all files (getFileChunks parallel)
+ *   SEARCH         — delegate to backend semanticSearch (intent + reranking + graph expansion)
  *
- * Architecture:
- *   plan()    → decide strategy (LLM-based with Regex fallback)
- *   execute() → run strategies in parallel via Promise.allSettled
- *   run()     → plan + execute → merged ChatFileChunk[]
+ * The LLM planner (ragPlanner.ts) is intentionally removed — the backend Phase 12A
+ * pipeline already handles intent classification, query expansion, and graph expansion.
  */
 
 import type { Message } from "$lib/types/Message";
 import type { ChatFileChunk, SemanticSearchResponse } from "$lib/rag/client";
 import type { RAGClient } from "$lib/server/rag/client";
-import { type RagFileContext } from "$lib/server/rag/ragRouter";
+import {
+	METADATA_QUERY_PATTERNS,
+	SUMMARIZE_VERBS,
+	GLOBAL_SUMMARIZE_PATTERNS,
+	findFileMatch,
+	type RagFileContext,
+} from "$lib/server/rag/ragRouter";
 import { compressHistory } from "$lib/server/rag/historyCompressor";
 
-export type RagStrategy =
-	| "NO_RAG"
-	| "SEMANTIC_SEARCH"
-	| "FILE_SEMANTIC"
-	| "FILE_DEEP_DIVE"
-	| "FULL_CONTEXT"
-	| "HYBRID";
+export type RagStrategy = "NO_RAG" | "SUMMARIZE_FILE" | "SUMMARIZE_ALL" | "SEARCH";
 
-/** Per-file execution plan within a HYBRID strategy */
 export interface FileExecutionPlan {
 	fileId: string;
 	fileName: string;
-	action: "DEEP_DIVE" | "SEMANTIC" | "SKIP";
-	/** Number of chunks to fetch (DEEP_DIVE only) */
+	action: "DEEP_DIVE";
 	limit?: number;
-	/** top_k for semantic search (SEMANTIC only) */
-	topK?: number;
 }
 
-/** The full execution plan for a single user query */
 export interface ExecutionPlan {
 	strategy: RagStrategy;
-	/** Possibly rewritten query for semantic search */
 	searchQuery: string;
-	/** Compressed conversation context (for logging/debug) */
 	historyContext: string;
-	/** Per-file decisions (populated for HYBRID / FILE_DEEP_DIVE / FILE_SEMANTIC) */
 	filePlans: FileExecutionPlan[];
-	/** top_k for SEMANTIC_SEARCH (global) */
 	globalTopK?: number;
 }
 
-import { generateFromDefaultEndpoint } from "$lib/server/generateFromDefaultEndpoint";
-import { planRagExecution } from "./ragAgentLegacy";
-import { RagPlanner } from "./ragPlanner";
+const SEARCH_TOP_K = 5;
 
-// ============================================================================
-// CONSTANTS (Legacy fallbacks)
-// ============================================================================
+function chunksPerFile(fileCount: number): number {
+	if (fileCount <= 3) return 12;
+	if (fileCount <= 6) return 8;
+	return 6;
+}
 
-const GLOBAL_SEMANTIC_TOP_K = 5;
-const FILE_SEMANTIC_TOP_K = 10;
+function isMetaQuery(q: string): boolean {
+	return METADATA_QUERY_PATTERNS.some((p) => p.test(q));
+}
 
-// ============================================================================
-// RAG AGENT CLASS
-// ============================================================================
+function hasSummarizeVerb(q: string): boolean {
+	const lower = q.toLowerCase();
+	return SUMMARIZE_VERBS.some((v) => lower.includes(v));
+}
+
+function isGlobalSummarize(q: string): boolean {
+	return GLOBAL_SUMMARIZE_PATTERNS.some((p) => p.test(q));
+}
 
 export class RagAgent {
-	private planner: RagPlanner;
+	constructor(private ragClient: RAGClient) {}
 
-	constructor(
-		private ragClient: RAGClient,
-		plannerOrGenerateFn: RagPlanner | typeof generateFromDefaultEndpoint
-	) {
-		// Dependency Injection: can pass either a RagPlanner instance or the generateFn directly
-		if (plannerOrGenerateFn instanceof RagPlanner) {
-			this.planner = plannerOrGenerateFn;
-		} else {
-			this.planner = new RagPlanner(plannerOrGenerateFn);
-		}
-	}
-
-	/**
-	 * Plan the retrieval strategy.
-	 * 1. Tries the LLM planner (RagPlanner)
-	 * 2. Falls back to Regex planner (planRagExecution) on failure/timeout
-	 */
-	async plan(
+	classify(
 		userQuery: string,
 		availableFiles: RagFileContext[],
-		conversationHistory: Message[],
-		locals: App.Locals
-	): Promise<ExecutionPlan> {
-		const compressed = compressHistory(conversationHistory);
-		const historyContext = compressed.contextString;
+		conversationHistory: Message[]
+	): ExecutionPlan {
+		const { contextString: historyContext } = compressHistory(conversationHistory);
 
-		try {
-			// 1. Attempt LLM Planning
-			return await this.planner.plan(userQuery, availableFiles, historyContext, locals);
-		} catch (error) {
-			console.warn(
-				"[RagAgent] LLM Planner failed, falling back to Regex:",
-				(error as Error).message
-			);
+		const explicitFile = findFileMatch(userQuery, availableFiles);
+		const isSummarize = hasSummarizeVerb(userQuery);
 
-			// 2. Fallback to deterministic regex-based planning
-			// We import it from the logic we previously had in this file (now extracted/moved)
-			return planRagExecution(userQuery, availableFiles, conversationHistory);
+		// Check global summarize BEFORE meta-query. "summarize all my files" matches meta-query
+		// pattern 6 (/\bmy\s+…files?\b/) but is clearly a summarize intent, not a list request.
+		const isGlobalSummarizeQuery = isGlobalSummarize(userQuery) || (isSummarize && !explicitFile);
+		if (isGlobalSummarizeQuery) {
+			if (availableFiles.length > 0) {
+				const perFile = chunksPerFile(availableFiles.length);
+				return {
+					strategy: "SUMMARIZE_ALL",
+					searchQuery: userQuery,
+					historyContext,
+					filePlans: availableFiles.map((f) => ({
+						fileId: f.id,
+						fileName: f.name,
+						action: "DEEP_DIVE" as const,
+						limit: perFile,
+					})),
+				};
+			}
+			// No files available — fall through to SEARCH (don't treat as NO_RAG)
+			return {
+				strategy: "SEARCH",
+				searchQuery: userQuery,
+				historyContext,
+				filePlans: [],
+				globalTopK: SEARCH_TOP_K,
+			};
 		}
+
+		if (isMetaQuery(userQuery)) {
+			return { strategy: "NO_RAG", searchQuery: userQuery, historyContext, filePlans: [] };
+		}
+
+		if (explicitFile && isSummarize) {
+			const totalChunks = explicitFile.chunkCount ?? 10;
+			const isPdf = explicitFile.name.toLowerCase().endsWith(".pdf");
+			const limit = Math.min(totalChunks, 20) + (isPdf ? 3 : 0);
+			return {
+				strategy: "SUMMARIZE_FILE",
+				searchQuery: userQuery,
+				historyContext,
+				filePlans: [
+					{ fileId: explicitFile.id, fileName: explicitFile.name, action: "DEEP_DIVE", limit },
+				],
+			};
+		}
+
+		if ((isGlobalSummarize(userQuery) || isSummarize) && availableFiles.length > 0) {
+			const perFile = chunksPerFile(availableFiles.length);
+			return {
+				strategy: "SUMMARIZE_ALL",
+				searchQuery: userQuery,
+				historyContext,
+				filePlans: availableFiles.map((f) => ({
+					fileId: f.id,
+					fileName: f.name,
+					action: "DEEP_DIVE" as const,
+					limit: perFile,
+				})),
+			};
+		}
+
+		return {
+			strategy: "SEARCH",
+			searchQuery: userQuery,
+			historyContext,
+			filePlans: [],
+			globalTopK: SEARCH_TOP_K,
+		};
 	}
 
-	/**
-	 * Execute a pre-built plan, returning merged chunks.
-	 */
 	async execute(plan: ExecutionPlan, messageId: string): Promise<ChatFileChunk[]> {
-		if (plan.strategy === "NO_RAG") {
-			return [];
-		}
+		if (plan.strategy === "NO_RAG") return [];
 
-		const allChunks: ChatFileChunk[] = [];
-
-		// ── SEMANTIC_SEARCH: cross-file, no scope ───────────────────────────────
-		if (plan.strategy === "SEMANTIC_SEARCH") {
+		if (plan.strategy === "SEARCH") {
 			try {
 				const resp = await this.ragClient.semanticSearch({
 					messageId,
 					userQuery: plan.searchQuery,
 					rewriteQuery: plan.searchQuery,
-					top_k: plan.globalTopK ?? GLOBAL_SEMANTIC_TOP_K,
+					top_k: plan.globalTopK ?? SEARCH_TOP_K,
 				});
-				allChunks.push(...(resp.chunks ?? []));
+				return resp.chunks ?? [];
 			} catch (e) {
-				console.warn("[RagAgent] SEMANTIC_SEARCH failed:", e);
+				console.warn("[RagAgent] SEARCH failed:", e);
+				return [];
 			}
-			return allChunks;
 		}
 
-		// ── FILE_SEMANTIC: semantic scoped to one file ───────────────────────────
-		if (plan.strategy === "FILE_SEMANTIC") {
-			const targets = plan.filePlans.filter((p) => p.action === "SEMANTIC");
-			if (targets.length === 0) return allChunks;
-
-			const results = await Promise.allSettled(
-				targets.map((fp) =>
-					this.ragClient.semanticSearch({
-						messageId,
-						userQuery: plan.searchQuery,
-						rewriteQuery: plan.searchQuery,
-						top_k: fp.topK ?? FILE_SEMANTIC_TOP_K,
-						fileIds: [fp.fileId],
-					})
-				)
-			);
-			for (const r of results) {
-				if (r.status === "fulfilled") allChunks.push(...(r.value.chunks ?? []));
-			}
-			return allChunks;
-		}
-
-		// ── FILE_DEEP_DIVE: full sequential read of one file ────────────────────
-		if (plan.strategy === "FILE_DEEP_DIVE") {
-			const targets = plan.filePlans.filter((p) => p.action === "DEEP_DIVE");
-			if (targets.length === 0) return allChunks;
-
-			const fp = targets[0]; // FILE_DEEP_DIVE always has exactly one file
-			try {
-				const resp = (await this.ragClient.getFileChunks(
-					fp.fileId,
-					fp.limit ?? 20,
-					0
-				)) as SemanticSearchResponse;
-				allChunks.push(...(resp.chunks ?? []));
-			} catch (e) {
-				console.warn("[RagAgent] FILE_DEEP_DIVE failed:", e);
-			}
-			return allChunks;
-		}
-
-		// ── FULL_CONTEXT + HYBRID: per-file parallel execution ──────────────────
-		// Both use filePlans[] with DEEP_DIVE / SEMANTIC / SKIP per file
-		const tasks: Array<Promise<SemanticSearchResponse | null>> = plan.filePlans.map((fp) => {
-			if (fp.action === "SKIP") return Promise.resolve(null);
-
-			if (fp.action === "DEEP_DIVE") {
-				return (
-					this.ragClient.getFileChunks(
-						fp.fileId,
-						fp.limit ?? 8,
-						0
-					) as Promise<SemanticSearchResponse>
-				).catch((e) => {
-					console.warn(`[RagAgent] DEEP_DIVE failed for "${fp.fileName}":`, e);
-					return null;
-				});
-			}
-
-			// SEMANTIC scoped to this file (HYBRID mode)
-			return this.ragClient
-				.semanticSearch({
-					messageId,
-					userQuery: plan.searchQuery,
-					rewriteQuery: plan.searchQuery,
-					top_k: fp.topK ?? 8,
-					fileIds: [fp.fileId],
-				})
-				.catch((e) => {
-					console.warn(`[RagAgent] SEMANTIC failed for "${fp.fileName}":`, e);
-					return null;
-				});
-		});
+		const tasks = plan.filePlans.map((fp) =>
+			(
+				this.ragClient.getFileChunks(fp.fileId, fp.limit ?? 8, 0) as Promise<SemanticSearchResponse>
+			).catch((e) => {
+				console.warn(`[RagAgent] getFileChunks failed for "${fp.fileName}":`, e);
+				return null;
+			})
+		);
 
 		const results = await Promise.allSettled(tasks);
+		const chunks: ChatFileChunk[] = [];
 		for (const r of results) {
 			if (r.status === "fulfilled" && r.value) {
-				allChunks.push(...(r.value.chunks ?? []));
+				chunks.push(...(r.value.chunks ?? []));
 			}
 		}
-		return allChunks;
+		return chunks;
 	}
 
-	/**
-	 * Full pipeline: plan → execute → return merged chunks.
-	 */
 	async run(
 		userQuery: string,
 		availableFiles: RagFileContext[],
 		conversationHistory: Message[],
-		messageId: string,
-		locals: App.Locals
+		messageId: string
 	): Promise<{ plan: ExecutionPlan; chunks: ChatFileChunk[] }> {
-		// 1. Plan
-		const plan = await this.plan(userQuery, availableFiles, conversationHistory, locals);
+		const plan = this.classify(userQuery, availableFiles, conversationHistory);
 
-		// Log the plan
 		console.log("\n[RAG AGENT] ========================");
 		console.log(`- Strategy  : ${plan.strategy}`);
 		console.log(`- Query     : "${userQuery}"`);
 		if (plan.historyContext) {
-			console.log(`- History   : ${plan.historyContext.slice(0, 100).replace(/\n/g, " ")}…`);
+			console.log(`- History   : ${plan.historyContext.slice(0, 100).replace(/\n/g, " ")}...`);
 		}
 		console.log("======================================");
 
-		if (plan.strategy === "NO_RAG") {
-			return { plan, chunks: [] };
-		}
+		if (plan.strategy === "NO_RAG") return { plan, chunks: [] };
 
-		// 2. Execute
 		const chunks = await this.execute(plan, messageId);
-
-		// Log results
 		const fileNames = [...new Set(chunks.map((c) => c.filename))];
 		console.log(
 			`[RAG AGENT] Retrieved ${chunks.length} chunks from: ${fileNames.join(", ") || "none"}\n`

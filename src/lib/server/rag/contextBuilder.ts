@@ -4,7 +4,7 @@
  * CRITICAL: Use structured format so LLM can reference specific chunks
  */
 
-import type { ChatFileChunk } from "$lib/rag/client";
+import type { ChatFileChunk, RagFileMetadata } from "$lib/rag/client";
 import { type RagContextMessage } from "$lib/rag/context";
 import type { RagStrategy } from "$lib/server/rag/ragAgent";
 
@@ -30,7 +30,7 @@ const CONTEXT_BUDGET_SIMPLE = 4000;
 const CONTEXT_BUDGET_LARGE = 8000;
 
 function getContextBudget(strategy?: RagStrategy): number {
-	if (strategy === "HYBRID" || strategy === "FULL_CONTEXT") return CONTEXT_BUDGET_LARGE;
+	if (strategy === "SUMMARIZE_ALL") return CONTEXT_BUDGET_LARGE;
 	return CONTEXT_BUDGET_SIMPLE;
 }
 
@@ -68,17 +68,30 @@ function getLanguageFromFilename(filename: string): string {
 // ============================================================================
 
 /**
+ * Build a short file-inventory note for meta queries (NO_RAG strategy).
+ * Injected so the LLM can answer "what files do I have?" without chunk retrieval.
+ */
+export function buildFileListNote(files: RagFileMetadata[]): string {
+	const list = files
+		.map((f) => `- **${f.name}** (${f.chunkCount} chunk${f.chunkCount !== 1 ? "s" : ""})`)
+		.join("\n");
+	return `## Uploaded Files\nThe user has ${files.length} uploaded file(s):\n${list}\n\nUse this list to answer questions about which files exist or what was uploaded.`;
+}
+
+/**
  * Build structured RAG context message for LLM injection.
  *
  * Pipeline:
  *   1. Score filter  — drop chunks with similarity < MIN_SIMILARITY_SCORE
  *   2. Role sort     — entry > dependency > supporting
- *   3. Budget cap    — trim to budget (4k simple / 8k HYBRID+FULL_CONTEXT)
+ *   3. Budget cap    — trim to budget (4k simple / 8k SUMMARIZE_ALL)
  *   4. Format        — structured <coderef> XML with file, relevance, role, line
+ *   5. File inventory— prepend available file list when provided
  */
 export function buildRagContextMessage(
 	chunks: ChatFileChunk[],
-	strategy?: RagStrategy
+	strategy?: RagStrategy,
+	files?: RagFileMetadata[]
 ): RagContextMessage {
 	if (chunks.length === 0) {
 		throw new Error("Cannot build context from empty chunks");
@@ -128,16 +141,24 @@ export function buildRagContextMessage(
 		);
 	}
 
-	// ── Step 4: Format ───────────────────────────────────────────────────────
+	// ── Step 4a: File inventory preamble ────────────────────────────────────
+	const fileInventory =
+		files && files.length > 0
+			? `## Uploaded Files\nThe user has ${files.length} uploaded file(s):\n${files.map((f) => `- **${f.name}** (${f.chunkCount} chunk${f.chunkCount !== 1 ? "s" : ""})`).join("\n")}\n\n`
+			: "";
+
+	// ── Step 4b: Format chunks ───────────────────────────────────────────────
 	const formattedChunks = budgeted
 		.map((chunk, idx) => {
 			const lang = getLanguageFromFilename(chunk.filename);
-			const relevancePercent = (chunk.similarity * 100).toFixed(0);
+			const relevancePercent =
+				chunk.similarity != null ? (chunk.similarity * 100).toFixed(0) : "N/A";
 
 			return `<coderef id="${chunk.id}" index="${idx + 1}">
 File: ${chunk.filename}
 Relevance: ${relevancePercent}%
 Role: ${chunk.role}
+${chunk.expanded_from ? `Expanded from: ${chunk.expanded_from}` : ""}
 ${chunk.pageNumber ? `Line: ${chunk.pageNumber}` : ""}
 Source URL: ${chunk.fileUrl || "N/A"}
 
@@ -148,7 +169,7 @@ ${chunk.text.trim()}
 		})
 		.join("\n\n---\n\n");
 
-	const contextContent = `# Retrieved Document Context
+	const contextContent = `${fileInventory}# Retrieved Document Context
 
 The following snippets were retrieved from the user's uploaded files and are relevant to their question. Use these references to provide accurate answers.
 

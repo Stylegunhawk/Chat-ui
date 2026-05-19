@@ -89,7 +89,26 @@ export interface MessageToolProgressUpdate
 }
 export interface MessageToolConfirmUpdate
 	extends MessageToolUpdateBase<MessageToolUpdateType.Confirm> {
-	operation: "commit" | "delete" | "merge" | "branch" | "push" | "update";
+	operation: // Structured ops (backend v1.0)
+	| "commit_file"
+		| "create_branch"
+		| "delete_branch"
+		| "merge_pr"
+		| "create_repo"
+		| "delete_repo"
+		| "create_release"
+		| "trigger_workflow"
+		| "create_webhook"
+		| "delete_webhook"
+		| "force_push"
+		// Legacy NL-extracted keywords
+		| "commit"
+		| "delete"
+		| "merge"
+		| "branch"
+		| "push"
+		| "update";
+	isCritical?: boolean;
 	repoName: string;
 	filePath?: string;
 	content?: string;

@@ -21,9 +21,10 @@ export interface ChatFileChunk {
 	fileType: string;
 	fileUrl: string;
 	text: string;
-	similarity: number;
+	similarity: number | null;
 	pageNumber?: number | null;
 	role: "entry" | "dependency" | "supporting";
+	expanded_from?: string;
 }
 
 export interface SemanticSearchRequest {

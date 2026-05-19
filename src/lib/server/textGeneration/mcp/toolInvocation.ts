@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { logger } from "../../logger";
 import type { MessageUpdate } from "$lib/types/MessageUpdate";
 import { MessageToolUpdateType, MessageUpdateType } from "$lib/types/MessageUpdate";
+import type { MessageToolConfirmUpdate } from "$lib/types/MessageUpdate";
 import { ToolResultStatus } from "$lib/types/Tool";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { McpToolMapping } from "$lib/server/mcp/tools";
@@ -354,46 +355,9 @@ export async function* executeToolCalls({
 				"[mcp] invoking tool"
 			);
 
-			// GitHub Operation Confirmation Logic
-			const isGithubOperation = mappingEntry.tool === "github_operation";
-			const query = String(p.paramsClean.query ?? "").toLowerCase();
-			const destructiveKeywords = ["commit", "delete", "merge", "branch", "push", "update"];
-			const isDestructive = destructiveKeywords.some((kw) => query.includes(kw));
-
-			if (isGithubOperation && isDestructive) {
-				const operation = destructiveKeywords.find((kw) => query.includes(kw)) as
-					| "commit"
-					| "delete"
-					| "merge"
-					| "branch"
-					| "push"
-					| "update";
-
-				updatesQueue.push({
-					type: MessageUpdateType.Tool,
-					subtype: MessageToolUpdateType.Confirm,
-					uuid: p.uuid,
-					operation,
-					repoName: String(p.paramsClean.repo_name ?? ""),
-					filePath: String(p.paramsClean.file_path ?? ""),
-					content: String(p.paramsClean.content ?? ""),
-					query: p.paramsClean.query ? String(p.paramsClean.query) : undefined,
-					commitMessage: String(p.paramsClean.commit_message ?? ""),
-					branchName: String(p.paramsClean.branch_name ?? p.paramsClean.head_branch ?? ""),
-					sourceBranch: String(p.paramsClean.source_branch ?? p.paramsClean.base_branch ?? ""),
-				});
-
-				const { action } = await createConfirmation(p.uuid);
-				if (action === "reject") {
-					throw new Error("Operation cancelled by user");
-				}
-			}
-
-			const toolResponse: McpToolTextResponse = await callMcpTool(
-				serverCfg,
-				mappingEntry.tool,
-				p.argsObj,
-				{
+			let toolResponse: McpToolTextResponse;
+			try {
+				toolResponse = await callMcpTool(serverCfg, mappingEntry.tool, p.argsObj, {
 					client,
 					signal: abortSignal,
 					timeoutMs: effectiveTimeoutMs,
@@ -407,8 +371,104 @@ export async function* executeToolCalls({
 							message: progress.message,
 						});
 					},
-				}
-			);
+				});
+			} catch (gateErr) {
+				const gateMsg = gateErr instanceof Error ? gateErr.message : String(gateErr);
+				const isGithubOp = mappingEntry.tool === "github_operation";
+				const isRiskGate =
+					gateMsg.includes("Risk gate blocked") || gateMsg.includes("requires: confirmed=true");
+
+				if (!isGithubOp || !isRiskGate) throw gateErr;
+
+				// CRITICAL ops require both risk_confirmed + risk_reason.
+				// Backend error message contains "reason (non-empty string)" for CRITICAL.
+				// This string is defined in DevForge backend src/agents/github/agent.py risk_gate_check().
+				const isCritical = gateMsg.includes("reason (non-empty string)");
+
+				const structuredOp = typeof p.argsObj.operation === "string" ? p.argsObj.operation : "";
+				const opMatch = /Operation (\w+) requires:/i.exec(gateMsg);
+				const rawOp = structuredOp || (opMatch ? opMatch[1] : "");
+				const knownOps = new Set<MessageToolConfirmUpdate["operation"]>([
+					"commit_file",
+					"create_branch",
+					"delete_branch",
+					"merge_pr",
+					"create_repo",
+					"delete_repo",
+					"create_release",
+					"trigger_workflow",
+					"create_webhook",
+					"delete_webhook",
+					"force_push",
+					"commit",
+					"delete",
+					"merge",
+					"branch",
+					"push",
+					"update",
+				]);
+				const operation: MessageToolConfirmUpdate["operation"] = knownOps.has(
+					rawOp as MessageToolConfirmUpdate["operation"]
+				)
+					? (rawOp as MessageToolConfirmUpdate["operation"])
+					: "commit"; // safe fallback — hits default card UI
+
+				updatesQueue.push({
+					type: MessageUpdateType.Tool,
+					subtype: MessageToolUpdateType.Confirm,
+					uuid: p.uuid,
+					operation,
+					isCritical,
+					repoName: String(p.paramsClean.repo_name ?? ""),
+					filePath: String(p.paramsClean.file_path ?? ""),
+					content: String(p.paramsClean.content ?? ""),
+					query: p.paramsClean.query ? String(p.paramsClean.query) : undefined,
+					commitMessage: String(p.paramsClean.commit_message ?? ""),
+					branchName: String(p.paramsClean.branch_name ?? p.paramsClean.head_branch ?? ""),
+					sourceBranch: String(p.paramsClean.source_branch ?? p.paramsClean.base_branch ?? ""),
+				});
+
+				// 5-minute timeout: if the user navigates away or never responds,
+				// cancel the pending confirmation to release the streaming connection.
+				const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+				const { action } = await Promise.race([
+					createConfirmation(p.uuid),
+					new Promise<never>((_, reject) =>
+						setTimeout(
+							() => reject(new Error("Confirmation timed out after 5 minutes")),
+							CONFIRM_TIMEOUT_MS
+						)
+					),
+				]);
+				if (action === "reject") throw new Error("Operation cancelled by user");
+
+				// Build a new args object for the retry — don't mutate p.argsObj
+				// in case it's referenced elsewhere (logging, error handling, etc.)
+				const retryArgs = {
+					...p.argsObj,
+					context: {
+						...(p.argsObj.context as Record<string, unknown> | undefined),
+						risk_confirmed: true,
+						...(isCritical ? { risk_reason: "Confirmed by user via chat UI" } : {}),
+					},
+				};
+
+				toolResponse = await callMcpTool(serverCfg, mappingEntry.tool, retryArgs, {
+					client,
+					signal: abortSignal,
+					timeoutMs: effectiveTimeoutMs,
+					onProgress: (progress) => {
+						updatesQueue.push({
+							type: MessageUpdateType.Tool,
+							subtype: MessageToolUpdateType.Progress,
+							uuid: p.uuid,
+							progress: progress.progress,
+							total: progress.total,
+							message: progress.message,
+						});
+					},
+				});
+			}
 			const { annotated } = processToolOutput(toolResponse.text ?? "");
 			logger.debug(
 				{ server: mappingEntry.server, tool: mappingEntry.tool },

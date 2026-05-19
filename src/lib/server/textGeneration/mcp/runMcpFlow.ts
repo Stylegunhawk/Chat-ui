@@ -480,6 +480,7 @@ export async function* runMcpFlow({
 
 			lastAssistantContent = "";
 			streamedContent = false;
+			thinkOpen = false; // reset per-iteration: each completion is a fresh request
 
 			const completionRequest: ChatCompletionCreateParamsStreaming = {
 				...completionBase,

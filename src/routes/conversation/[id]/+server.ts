@@ -323,11 +323,9 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		try {
 			const { RAGClient } = await import("$lib/server/rag/client");
 			const { RagAgent } = await import("$lib/server/rag/ragAgent");
-			const { buildRagContextMessage } = await import("$lib/server/rag/contextBuilder");
-			const { generateFromDefaultEndpoint } = await import(
-				"$lib/server/generateFromDefaultEndpoint"
+			const { buildRagContextMessage, buildFileListNote } = await import(
+				"$lib/server/rag/contextBuilder"
 			);
-
 			// Initialize RAG client with session (JWT auth)
 			const ragClient = new RAGClient(undefined, locals.sessionId);
 			const userQuery = newPrompt?.trim();
@@ -349,7 +347,7 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 				// ── RAG INJECTION: Only if enabled for conversation ─────────────
 				if (conv.ragEnabled !== false && userQuery) {
-					const ragAgent = new RagAgent(ragClient, generateFromDefaultEndpoint);
+					const ragAgent = new RagAgent(ragClient);
 					const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
 
 					// ── Run the RAG Agent ─────────────────────────────────────────────
@@ -357,21 +355,27 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 						userQuery,
 						mergedFiles,
 						historyForAgent,
-						newUserMessageId.toString(),
-						locals
+						newUserMessageId.toString()
 					);
 
-					// ── Only inject retrieved chunks into prompt (Skip NO_RAG meta-injection) ─
+					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+
 					if (chunks.length > 0) {
-						const ragContextMessage = buildRagContextMessage(chunks, plan.strategy);
+						// Pass mergedFiles so LLM sees the full file inventory alongside chunks
+						const ragContextMessage = buildRagContextMessage(chunks, plan.strategy, mergedFiles);
 
 						// Attach chunks to assistant message for citation UI rendering
 						ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
 
 						// Prefix the latest user message with retrieved context
-						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
 						if (lastMsg && lastMsg.from === "user") {
 							lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+						}
+					} else if (plan.strategy === "NO_RAG" && mergedFiles.length > 0) {
+						// Meta query ("what files do I have?") — inject file list only so LLM can answer
+						if (lastMsg && lastMsg.from === "user") {
+							const fileNote = buildFileListNote(mergedFiles);
+							lastMsg.content = `${fileNote}\n\n---\n\n${lastMsg.content}`;
 						}
 					}
 				}

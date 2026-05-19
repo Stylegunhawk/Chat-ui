@@ -8,6 +8,11 @@
 	import LucideArrowLeft from "~icons/lucide/arrow-left";
 	import CarbonEdit from "~icons/carbon/edit";
 	import CarbonDebug from "~icons/carbon/debug";
+	import LucideTag from "~icons/lucide/tag";
+	import LucidePlay from "~icons/lucide/play";
+	import LucideWebhook from "~icons/lucide/webhook";
+	import LucideGitFork from "~icons/lucide/git-fork";
+	import LucideGitCommit from "~icons/lucide/git-commit-horizontal";
 
 	interface Props {
 		confirm: MessageToolConfirmUpdate;
@@ -47,6 +52,16 @@
 
 	const config = $derived.by(() => {
 		switch (confirm.operation) {
+			// Structured ops
+			case "commit_file":
+			case "commit":
+				return {
+					title: "Commit File",
+					icon: CarbonDocument,
+					accent: "border-l-green-500",
+					description: "Apply these changes to the repository.",
+				};
+			case "create_branch":
 			case "branch":
 				return {
 					title: "Create Branch",
@@ -54,26 +69,75 @@
 					accent: "border-l-blue-500",
 					description: "This will create a new branch. You can delete it later if needed.",
 				};
-			case "commit":
+			case "delete_branch":
 				return {
-					title: "Commit Changes",
-					icon: CarbonDocument,
-					accent: "border-l-green-500",
-					description: "Apply these changes to the file.",
-				};
-			case "delete":
-				return {
-					title: "Delete",
+					title: "Delete Branch",
 					icon: CarbonTrashCan,
-					accent: "border-l-red-500",
-					description: "This action cannot be undone. Please confirm you want to delete this.",
+					accent: confirm.isCritical ? "border-l-red-700" : "border-l-red-500",
+					description: confirm.isCritical
+						? "You are deleting a protected branch. This cannot be recovered without force-push access."
+						: "This will permanently delete the branch.",
 				};
+			case "merge_pr":
 			case "merge":
 				return {
-					title: "Merge",
+					title: "Merge Pull Request",
 					icon: LucideGitMerge,
-					accent: "border-l-purple-500",
-					description: "This will merge the branches. Conflicts may occur.",
+					accent: confirm.isCritical ? "border-l-red-600" : "border-l-purple-500",
+					description: confirm.isCritical
+						? "Merging into a protected branch (production/release). Ensure all checks passed."
+						: "This will merge the pull request. Conflicts may require manual resolution.",
+				};
+			case "create_repo":
+				return {
+					title: "Create Repository",
+					icon: LucideGitFork,
+					accent: "border-l-blue-500",
+					description: "This will create a new GitHub repository under your account.",
+				};
+			case "delete_repo":
+			case "delete":
+				return {
+					title: "Delete Repository",
+					icon: CarbonTrashCan,
+					accent: "border-l-red-700",
+					description: "Permanently deletes the repository and all its contents. This cannot be undone.",
+				};
+			case "create_release":
+				return {
+					title: "Create Release",
+					icon: LucideTag,
+					accent: "border-l-green-600",
+					description: "This will publish a new GitHub release and tag.",
+				};
+			case "trigger_workflow":
+				return {
+					title: "Trigger Workflow",
+					icon: LucidePlay,
+					accent: "border-l-yellow-500",
+					description: "This will dispatch a GitHub Actions workflow run.",
+				};
+			case "create_webhook":
+				return {
+					title: "Create Webhook",
+					icon: LucideWebhook,
+					accent: "border-l-yellow-500",
+					description: "This will register a new webhook endpoint on the repository.",
+				};
+			case "delete_webhook":
+				return {
+					title: "Delete Webhook",
+					icon: LucideWebhook,
+					accent: "border-l-orange-500",
+					description: "This will remove the webhook. Events will no longer be delivered.",
+				};
+			case "force_push":
+			case "push":
+				return {
+					title: "Force Push",
+					icon: LucideGitCommit,
+					accent: "border-l-red-600",
+					description: "This will rewrite remote history. Collaborators may lose work.",
 				};
 			case "update":
 				return {
@@ -82,31 +146,21 @@
 					accent: "border-l-yellow-500",
 					description: "Update the existing resource.",
 				};
-			default:
-				try {
-					return {
-						title: confirm.operation.charAt(0).toUpperCase() + confirm.operation.slice(1),
-						icon: CarbonDebug,
-						accent: "border-l-gray-400",
-						description: "Please review this operation.",
-					};
-				} catch {
-					return {
-						title: "Operation",
-						icon: LucideBug,
-						accent: "border-l-gray-400",
-						description: "Please review this operation.",
-					};
-				}
+			default: {
+				const op = confirm.operation as string;
+				return {
+					title: op ? op.charAt(0).toUpperCase() + op.slice(1) : "Operation",
+					icon: CarbonDebug,
+					accent: "border-l-gray-400",
+					description: "Please review this operation before proceeding.",
+				};
+			}
 		}
 	});
 
 	let previewLines = $derived.by(() => {
 		if (confirm.content && confirm.content.trim()) {
-			return confirm.content
-				.split("\n")
-				.slice(0, 8)
-				.map((line) => line);
+			return confirm.content.split("\n").slice(0, 8);
 		}
 		if (confirm.query && confirm.query.trim()) {
 			return [confirm.query];
@@ -185,7 +239,13 @@
 		</div>
 	{/if}
 
-	{#if confirm.operation === "delete"}
+	{#if confirm.isCritical}
+		<div
+			class="mt-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-tight text-red-600 dark:text-red-400"
+		>
+			🔴 CRITICAL — This action is irreversible and targets a protected resource
+		</div>
+	{:else if confirm.operation === "delete" || confirm.operation === "delete_repo" || confirm.operation === "delete_branch" || confirm.operation === "delete_webhook"}
 		<div
 			class="mt-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-tight text-red-500"
 		>

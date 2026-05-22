@@ -68,6 +68,8 @@ const serverMap = (servers: McpServerConfig[]): Map<string, McpServerConfig> => 
 	return map;
 };
 
+const CLIENT_SIDE_TOOLS = new Set<string>(["generate_artifact"]);
+
 export async function* executeToolCalls({
 	calls,
 	mapping,
@@ -316,6 +318,23 @@ export async function* executeToolCalls({
 
 		const mappingEntry = mapping[p.call.name];
 		if (!mappingEntry) {
+			if (CLIENT_SIDE_TOOLS.has(p.call.name)) {
+				const argsRaw = parseArgs(p.call.arguments) as Record<string, unknown>;
+				const output = JSON.stringify({ success: true, ...argsRaw });
+				results.push({ index, output, uuid: p.uuid, paramsClean: p.paramsClean });
+				updatesQueue.push({
+					type: MessageUpdateType.Tool,
+					subtype: MessageToolUpdateType.Result,
+					uuid: p.uuid,
+					result: {
+						status: ToolResultStatus.Success,
+						call: { name: p.call.name, parameters: p.paramsClean },
+						outputs: [argsRaw as Record<string, unknown>],
+						display: true,
+					},
+				});
+				return;
+			}
 			const message = `Unknown MCP function: ${p.call.name}`;
 			results.push({
 				index,

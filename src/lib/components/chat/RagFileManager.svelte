@@ -7,6 +7,7 @@
 	import CarbonUpload from "~icons/carbon/upload";
 	import CarbonTrashCan from "~icons/carbon/trash-can";
 	import CarbonWarningAlt from "~icons/carbon/warning-alt";
+	import CarbonLaunch from "~icons/carbon/launch";
 	import EosIconsLoading from "~icons/eos-icons/loading";
 	import { browserRagClient as ragClient } from "$lib/rag/browserClient";
 	import type { RagFileMetadata } from "$lib/rag/client";
@@ -130,10 +131,11 @@
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
-	// Format date
+	// Format date in IST
 	function formatDate(isoDate: string): string {
 		const date = new Date(isoDate);
-		return date.toLocaleDateString(undefined, {
+		return date.toLocaleDateString("en-IN", {
+			timeZone: "Asia/Kolkata",
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",
@@ -287,6 +289,20 @@
 										{/if}
 									</div>
 								</div>
+
+								<!-- Open Docs Button -->
+								{#if file.url}
+									<a
+										href={file.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="flex-none rounded-lg p-2 text-gray-500 hover:bg-blue-50 hover:text-blue-600 dark:text-gray-400 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+										aria-label="Open file"
+										title="Open file"
+									>
+										<CarbonLaunch class="size-5" />
+									</a>
+								{/if}
 
 								<!-- Delete Button -->
 								<button

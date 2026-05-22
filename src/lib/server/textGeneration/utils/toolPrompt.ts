@@ -37,14 +37,16 @@ export function buildToolPreprompt(tools: OpenAiTool[], ragEnabled = true): stri
 		`- retrieve_docs: Use ONLY when you need to understand file content to complete a task. Skip for general questions.`,
 		`- generate_data: Use for synthetic dataset generation. Specify domain and schema clearly.`,
 		`- rerank_docs: Use after retrieve_docs when result quality matters.`,
-		`- refine_prompt: Use when user's query is vague and needs clarification before acting.`,
+		`- refine_prompt: Use when user's query is vague. After calling, check data.quality.prompt_grounding — if "low", tell the user what context is missing (data.quality.missing_signals joined as a list) and ask them to clarify before calling refine_prompt again with the enriched inputs from data.quality.suggested_inputs. Only proceed with the task once grounding is "medium" or "high".`,
 		`- generate_cheatsheet: Use for language/library reference requests.`,
+		`- generate_artifact: Use whenever you produce output the user should SEE rendered — not just as a code block to read. Call this for HTML apps, SVG graphics, Mermaid diagrams, JSON data, Markdown documents, or CSV tables. The artifact panel opens automatically. Parameters: type (one of: text/html | image/svg+xml | text/x-mermaid | application/json | text/markdown | text/csv), title (short label, 2-5 words), content (full string — complete and self-contained). For HTML: include <!DOCTYPE html>. For Mermaid: start with graph/sequenceDiagram/etc. Do NOT call this for code snippets meant to be read — only for content meant to be rendered.`,
 
 		`## CHAINING`,
 		`Complex tasks require tool chains. Execute without asking permission between steps:`,
 		`- "commit my uploaded file" → [retrieve file URL from RAG context] → [github_operation commit]`,
 		`- "find auth bug and create issue" → [retrieve_docs "auth error"] → [github_operation create_issue]`,
 		`- "review and commit refactored code" → [retrieve_docs] → [rerank_docs] → [github_operation commit]`,
+		`- "build me a dashboard" → [generate_artifact type=text/html title="Dashboard" content="<!DOCTYPE html>..."]`,
 
 		`## GITOPS SPECIFICS`,
 		`- available_files is auto-injected in context. Reference files by name or URL directly.`,

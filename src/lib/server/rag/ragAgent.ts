@@ -123,8 +123,10 @@ export class RagAgent {
 		// Kept separate from SUMMARIZE_VERBS to avoid triggering SUMMARIZE_ALL for non-file queries.
 		const EXPLAIN_FILE_RE =
 			/\b(explain|describe|how\s+does|what\s+does|tell\s+me\s+about|walk\s+(?:me\s+)?through)\b/i;
+		const EXACT_CODE_RE =
+			/\b(?:exact\s+code|exact\s+implementation|show\s+me\s+the\s+code|give\s+me\s+the\s+code|give\s+the\s+code|show\s+the\s+code|implementation\s+of|code\s+for)\b/i;
 
-		if (explicitFile && (isSummarize || EXPLAIN_FILE_RE.test(userQuery))) {
+		if (explicitFile && (isSummarize || EXPLAIN_FILE_RE.test(userQuery) || EXACT_CODE_RE.test(userQuery))) {
 			const totalChunks = explicitFile.chunkCount ?? 10;
 			const isPdf = explicitFile.name.toLowerCase().endsWith(".pdf");
 			const limit = Math.min(totalChunks, 20) + (isPdf ? 3 : 0);

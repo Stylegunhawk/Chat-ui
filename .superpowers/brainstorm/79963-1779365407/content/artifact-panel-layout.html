@@ -1,0 +1,77 @@
+<h2>Artifact Panel — Where should it live?</h2>
+<p class="subtitle">The core UX question: where does the rendered artifact appear relative to the chat?</p>
+
+<div class="cards">
+
+  <!-- Option A: Split panel -->
+  <div class="card" data-choice="split-panel" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-family:monospace;font-size:11px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;height:160px;">
+        <div style="background:#1e293b;border-radius:6px;padding:8px;overflow:hidden;">
+          <div style="color:#94a3b8;font-size:10px;margin-bottom:6px;">💬 Chat</div>
+          <div style="color:#e2e8f0;line-height:1.5;font-size:10px;">Here's the React component you asked for →</div>
+          <div style="margin-top:8px;background:#0f172a;border-radius:4px;padding:6px;">
+            <div style="color:#7dd3fc;font-size:9px;">▶ render artifact</div>
+          </div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:8px;overflow:hidden;border:1px solid #3b82f6;">
+          <div style="color:#94a3b8;font-size:10px;margin-bottom:6px;">🎨 Artifact Preview</div>
+          <div style="background:#fff;border-radius:4px;height:100px;display:flex;align-items:center;justify-content:center;">
+            <div style="color:#333;font-size:11px;text-align:center;">Live rendered<br/>HTML / React / SVG</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Split Panel (Claude-style)</h3>
+      <p>Chat on the left, artifact preview on the right. Persistent — survives scrolling. Most powerful for complex multi-step work.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Inline expanded -->
+  <div class="card" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-family:monospace;font-size:11px;">
+      <div style="height:160px;background:#1e293b;border-radius:6px;padding:8px;overflow:hidden;">
+        <div style="color:#94a3b8;font-size:10px;margin-bottom:6px;">💬 Chat</div>
+        <div style="color:#e2e8f0;font-size:10px;margin-bottom:8px;">Here's your component:</div>
+        <div style="background:#fff;border-radius:6px;padding:8px;border:1px solid #3b82f6;height:88px;display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="color:#333;font-size:9px;font-weight:600;">🎨 HTML Artifact</span>
+            <span style="color:#3b82f6;font-size:9px;">⤢ expand</span>
+          </div>
+          <div style="background:#f8fafc;border-radius:4px;flex:1;display:flex;align-items:center;justify-content:center;">
+            <span style="color:#555;font-size:9px;">Live preview inline</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Inline Expanded</h3>
+      <p>Artifact renders inline inside the message bubble. Expandable to fullscreen. Simpler, feels like Kimi/Gemini. No layout restructuring needed.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Drawer/Tab -->
+  <div class="card" data-choice="drawer" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-family:monospace;font-size:11px;">
+      <div style="height:160px;background:#1e293b;border-radius:6px;padding:8px;overflow:hidden;">
+        <div style="color:#94a3b8;font-size:10px;margin-bottom:4px;">💬 Chat (full width when closed)</div>
+        <div style="color:#e2e8f0;font-size:10px;margin-bottom:6px;">Here's your component →</div>
+        <div style="background:#0f172a;border-radius:4px;padding:4px;margin-bottom:6px;">
+          <span style="background:#3b82f6;color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;cursor:pointer;">🎨 1 artifact  ▶ open</span>
+        </div>
+        <div style="background:#1e2d40;border:1px solid #3b82f6;border-radius:6px;padding:6px;height:68px;display:flex;flex-direction:column;gap:2px;">
+          <div style="color:#7dd3fc;font-size:9px;font-weight:600;">Artifact Drawer</div>
+          <div style="background:#fff;border-radius:3px;flex:1;display:flex;align-items:center;justify-content:center;">
+            <span style="color:#555;font-size:9px;">Rendered output</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Floating Drawer / Tab</h3>
+      <p>A pill/badge in the message opens a bottom/side drawer. Chat stays full-width until artifact is opened. Good for mobile.</p>
+    </div>
+  </div>
+
+</div>

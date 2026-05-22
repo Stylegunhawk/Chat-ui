@@ -11,6 +11,13 @@ import type { RagStrategy } from "$lib/server/rag/ragAgent";
 // Re-export for server usage
 export { isRagContextMessage } from "$lib/rag/context";
 
+function formatUploadedFileLine(file: RagFileMetadata): string {
+	const chunkLabel = `${file.chunkCount} chunk${file.chunkCount !== 1 ? "s" : ""}`;
+	return file.url
+		? `- **${file.name}** (${chunkLabel})\n  File URL: ${file.url}`
+		: `- **${file.name}** (${chunkLabel})`;
+}
+
 // ============================================================================
 // QUALITY GATES
 // ============================================================================
@@ -72,9 +79,7 @@ function getLanguageFromFilename(filename: string): string {
  * Injected so the LLM can answer "what files do I have?" without chunk retrieval.
  */
 export function buildFileListNote(files: RagFileMetadata[]): string {
-	const list = files
-		.map((f) => `- **${f.name}** (${f.chunkCount} chunk${f.chunkCount !== 1 ? "s" : ""})`)
-		.join("\n");
+	const list = files.map(formatUploadedFileLine).join("\n");
 	return `## Uploaded Files\nThe user has ${files.length} uploaded file(s):\n${list}\n\nUse this list to answer questions about which files exist or what was uploaded.`;
 }
 
@@ -144,7 +149,7 @@ export function buildRagContextMessage(
 	// ── Step 4a: File inventory preamble ────────────────────────────────────
 	const fileInventory =
 		files && files.length > 0
-			? `## Uploaded Files\nThe user has ${files.length} uploaded file(s):\n${files.map((f) => `- **${f.name}** (${f.chunkCount} chunk${f.chunkCount !== 1 ? "s" : ""})`).join("\n")}\n\n`
+			? `## Uploaded Files\nThe user has ${files.length} uploaded file(s):\n${files.map(formatUploadedFileLine).join("\n")}\n\n`
 			: "";
 
 	// ── Step 4b: Format chunks ───────────────────────────────────────────────

@@ -26,6 +26,8 @@
 	import { requireAuthUser } from "$lib/utils/auth";
 	import CarbonBook from "~icons/carbon/book";
 	import CheatsheetModal from "$lib/components/chat/CheatsheetModal.svelte";
+	import { artifactStore } from "$lib/stores/artifact.svelte";
+	import ArtifactPanel from "$lib/components/chat/ArtifactPanel.svelte";
 
 	let { data = $bindable(), children } = $props();
 
@@ -120,6 +122,13 @@
 			}
 
 			$titleUpdate = null;
+		}
+	});
+
+	$effect(() => {
+		void page.url.pathname;
+		if (!page.url.pathname.startsWith('/conversation/')) {
+			artifactStore.reset();
 		}
 	});
 
@@ -253,9 +262,9 @@
 <BackgroundGenerationPoller />
 
 <div
-	class="fixed grid h-full w-screen grid-cols-1 grid-rows-[auto,1fr] overflow-hidden text-smd {!isNavCollapsed
-		? 'md:grid-cols-[290px,1fr]'
-		: 'md:grid-cols-[0px,1fr]'} transition-[300ms] [transition-property:grid-template-columns] dark:text-gray-300 md:grid-rows-[1fr]"
+	class="fixed grid h-full w-screen grid-cols-1 grid-rows-[auto,1fr] overflow-hidden text-smd {artifactStore.panelOpen
+		? (!isNavCollapsed ? 'md:grid-cols-[290px,1fr,45vw]' : 'md:grid-cols-[0px,1fr,45vw]')
+		: (!isNavCollapsed ? 'md:grid-cols-[290px,1fr]' : 'md:grid-cols-[0px,1fr]')} transition-[300ms] [transition-property:grid-template-columns] dark:text-gray-300 md:grid-rows-[1fr]"
 >
 	<ExpandNavigation
 		isCollapsed={isNavCollapsed}
@@ -265,7 +274,7 @@
 			: 'left-0'} *:transition-transform"
 	/>
 
-	{#if canShare}
+	{#if canShare && !artifactStore.panelOpen}
 		<button
 			type="button"
 			class="hidden size-8 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white/90 text-sm font-medium text-gray-700 shadow-sm hover:bg-white/60 hover:text-gray-500 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-700 md:absolute md:right-6 md:top-5 md:flex
@@ -278,7 +287,7 @@
 		</button>
 	{/if}
 
-	{#if canShowCheatsheet}
+	{#if canShowCheatsheet && !artifactStore.panelOpen}
 		<button
 			type="button"
 			onclick={() => (showCheatsheet = true)}
@@ -313,6 +322,12 @@
 		<Toast message={currentError} />
 	{/if}
 	{@render children?.()}
+
+	{#if artifactStore.panelOpen}
+		<div class="hidden h-full overflow-hidden md:flex md:flex-col">
+			<ArtifactPanel />
+		</div>
+	{/if}
 
 	{#if publicConfig.PUBLIC_PLAUSIBLE_SCRIPT_URL}
 		<script>

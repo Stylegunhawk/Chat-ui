@@ -79,16 +79,33 @@ describe("RagAgent.classify — 3-bucket router", () => {
 		expect(plan.filePlans).toHaveLength(0);
 	});
 
-	test("SEARCH: code structure query delegates to backend (not HYBRID)", () => {
+	test("SUMMARIZE_FILE: named file explanation query routes to file deep dive", () => {
 		const agent = new RagAgent(noopClient);
 		const plan = agent.classify("what does auth.py import from utils.ts?", files, []);
-		expect(plan.strategy).toBe("SEARCH");
+		expect(plan.strategy).toBe("SUMMARIZE_FILE");
 	});
 
-	test("SEARCH: named file without summarize verb delegates to backend", () => {
+	test("SUMMARIZE_FILE: named file without summarize verb still routes to file deep dive", () => {
 		const agent = new RagAgent(noopClient);
 		const plan = agent.classify("explain the validate function in auth.py", files, []);
-		expect(plan.strategy).toBe("SEARCH");
+		expect(plan.strategy).toBe("SUMMARIZE_FILE");
+	});
+
+	test("SUMMARIZE_FILE: exact code request for named function routes to file deep dive", () => {
+		const exactCodeFiles: RagFileContext[] = [
+			{ id: "f1", name: "log_parser.py", chunkCount: 20 },
+			{ id: "f2", name: "repo_discovery.py", chunkCount: 12 },
+		];
+		const agent = new RagAgent(noopClient);
+		const plan = agent.classify(
+			"give the exact code for _fallback_parse function in log_parser.py",
+			exactCodeFiles,
+			[]
+		);
+		expect(plan.strategy).toBe("SUMMARIZE_FILE");
+		expect(plan.filePlans).toHaveLength(1);
+		expect(plan.filePlans[0].fileId).toBe("f1");
+		expect(plan.filePlans[0].limit).toBe(20);
 	});
 
 	test("routes single-file + summarize verb with no explicit name → SUMMARIZE_FILE", () => {

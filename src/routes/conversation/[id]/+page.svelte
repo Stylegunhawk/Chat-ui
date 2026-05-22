@@ -520,7 +520,12 @@
 			if (enabled) {
 				ragFiles = await ragClient.listFiles();
 			}
-			await invalidateAll();
+			// Skip invalidateAll while streaming — it would reload data.messages from the server
+			// and the $effect on line ~531 would overwrite in-progress streaming tokens,
+			// making the current assistant message temporarily disappear.
+			if (!isConversationStreaming(messages)) {
+				await invalidateAll();
+			}
 		} catch (e) {
 			console.error("[RAG Toggle] fetch error:", e);
 		}
@@ -616,6 +621,7 @@
 		ragFiles = await ragClient.listFiles();
 	}}
 />
+
 {#if showSafetyModal}
 	<Modal onclose={() => (showSafetyModal = false)}>
 		<div class="p-6">

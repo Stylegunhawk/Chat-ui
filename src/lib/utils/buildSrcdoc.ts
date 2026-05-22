@@ -1,3 +1,41 @@
+export function buildReactSrcdoc(code: string, channel: string): string {
+	// Strip ES module import/export syntax — React & ReactDOM are UMD globals loaded from CDN
+	const clean = code
+		.replace(/^import\s+[^\n]+from\s+['"][^'"]+['"]\s*;?\s*\n?/gm, "")
+		.replace(/export\s+default\s+function\s+(\w+)/g, "function $1")
+		.replace(/export\s+default\s+class\s+(\w+)/g, "class $1")
+		.replace(/export\s+default\s+(\w+)\s*;?\s*$/, "var __defaultExport__ = $1")
+		.replace(/export\s+\{[^}]+\}\s*;?\s*/g, "")
+		// prevent user code from breaking out of the <script type="text/babel"> tag
+		.replace(/<\/script/gi, "<\\/script");
+
+	const endScriptTag = "</scr" + "ipt>";
+
+	const scaffold =
+		`<!doctype html>\n<html>\n<head>\n` +
+		`  <meta charset="utf-8">\n` +
+		`  <meta name="viewport" content="width=device-width, initial-scale=1">\n` +
+		`  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin>${endScriptTag}\n` +
+		`  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin>${endScriptTag}\n` +
+		`  <script src="https://unpkg.com/@babel/standalone/babel.min.js">${endScriptTag}\n` +
+		`  <script src="https://cdn.tailwindcss.com">${endScriptTag}\n` +
+		`  <style>body{margin:0;font-family:system-ui,sans-serif}*{box-sizing:border-box}</style>\n` +
+		`</head>\n<body>\n` +
+		`  <div id="__react_root"></div>\n` +
+		`  <script type="text/babel">\n` +
+		`const{useState,useEffect,useRef,useCallback,useMemo,useReducer,useContext,createContext,Fragment,memo,forwardRef,lazy,Suspense}=React;\n` +
+		clean +
+		`\n;(function(){\n` +
+		`  var __comp=typeof App!=='undefined'?App:typeof __defaultExport__!=='undefined'?__defaultExport__:null;\n` +
+		`  if(__comp){ReactDOM.createRoot(document.getElementById('__react_root')).render(React.createElement(__comp));}\n` +
+		`  else{document.getElementById('__react_root').innerHTML='<div style="color:red;padding:16px">No component found — define an <code>App</code> function.</div>';}\n` +
+		`})();\n` +
+		`  ${endScriptTag}\n` +
+		`</body>\n</html>`;
+
+	return buildSrcdoc(scaffold, channel);
+}
+
 export function buildSrcdoc(content: string, channel: string): string {
 	const trimmed = content.trimStart();
 	const svgPattern = /^(?:<\?xml[^>]*>\s*)?(?:<!doctype\s+svg[^>]*>\s*)?<svg[\s>]/i;

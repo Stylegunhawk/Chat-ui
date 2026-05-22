@@ -1,19 +1,24 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
-	import { buildSrcdoc } from "$lib/utils/buildSrcdoc";
+	import { buildSrcdoc, buildReactSrcdoc } from "$lib/utils/buildSrcdoc";
 
 	interface Props {
 		content: string;
+		type?: string;
 		onerror?: (errors: { message: string; stack?: string }[]) => void;
 	}
 
-	let { content, onerror }: Props = $props();
+	let { content, type, onerror }: Props = $props();
 
 	let iframeEl: HTMLIFrameElement | undefined = $state();
 	let channel = $state(`preview_${Math.random().toString(36).slice(2)}`);
 	let errors: { message: string; stack?: string }[] = $state([]);
 
-	let srcdoc = $derived(buildSrcdoc(content, channel));
+	let srcdoc = $derived(
+		type === "text/x-react"
+			? buildReactSrcdoc(content, channel)
+			: buildSrcdoc(content, channel)
+	);
 
 	type PreviewMessage = {
 		type: string;

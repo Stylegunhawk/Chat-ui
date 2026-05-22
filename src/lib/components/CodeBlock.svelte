@@ -27,6 +27,11 @@
 		markdown: "text/markdown",
 		md: "text/markdown",
 		csv: "text/csv",
+		jsx: "text/x-react",
+		tsx: "text/x-react",
+		react: "text/x-react",
+		dart: "text/x-flutter",
+		flutter: "text/x-flutter",
 	};
 
 	function hasStrictHtml5Doctype(input: string): boolean {

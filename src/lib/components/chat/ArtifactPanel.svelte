@@ -133,6 +133,21 @@
 			{:else if artifact.type === "text/html" || artifact.type === "image/svg+xml"}
 				<ArtifactSandbox content={artifact.content} onerror={handleSandboxError} />
 
+			{:else if artifact.type === "text/x-react"}
+				<ArtifactSandbox content={artifact.content} type={artifact.type} onerror={handleSandboxError} />
+
+			{:else if artifact.type === "text/x-flutter"}
+				<div class="flex h-full flex-col">
+					<div class="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-400">
+						Flutter web requires a Dart runtime — showing source. Copy to
+						<a href="https://dartpad.dev" target="_blank" rel="noopener" class="underline">DartPad</a>
+						to run.
+					</div>
+					<div class="scrollbar-custom min-h-0 flex-1 overflow-auto p-4">
+						<pre class="whitespace-pre font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200">{artifact.content}</pre>
+					</div>
+				</div>
+
 			{:else if artifact.type === "text/x-mermaid"}
 				{#if browser}
 					{#await import("@friendofsvelte/mermaid") then { Mermaid }}

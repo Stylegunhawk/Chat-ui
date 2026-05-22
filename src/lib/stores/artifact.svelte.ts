@@ -4,7 +4,9 @@ export type ArtifactType =
 	| "text/x-mermaid"
 	| "application/json"
 	| "text/markdown"
-	| "text/csv";
+	| "text/csv"
+	| "text/x-react"
+	| "text/x-flutter";
 
 export const TYPE_LABELS: Record<string, string> = {
 	"text/html": "HTML",
@@ -13,6 +15,8 @@ export const TYPE_LABELS: Record<string, string> = {
 	"application/json": "JSON",
 	"text/markdown": "Markdown",
 	"text/csv": "CSV",
+	"text/x-react": "React",
+	"text/x-flutter": "Flutter",
 };
 
 export const TYPE_COLORS: Record<string, string> = {
@@ -22,6 +26,8 @@ export const TYPE_COLORS: Record<string, string> = {
 	"application/json": "bg-yellow-500",
 	"text/markdown": "bg-blue-500",
 	"text/csv": "bg-green-500",
+	"text/x-react": "bg-cyan-500",
+	"text/x-flutter": "bg-sky-600",
 };
 
 export interface Artifact {

@@ -1,19 +1,20 @@
 # Frontend RAG Agentic Architecture
 
-**Version:** 3.0 — Agentic Orchestrator (LLM + Regex Fallback)  
-**Last Updated:** 2026-03-03
+**Version:** 4.0 — Decoupled `runRagFlow` (MCP-tool-calling loop)
+**Last Updated:** 2026-05-24
 
 ---
 
 ## Overview
 
-The frontend RAG system utilizes an **Agentic Orchestrator** pattern. Instead of simple rule-based routing, a dedicated `RagAgent` uses an LLM-based `RagPlanner` to decide the best retrieval strategy.
+The RAG system uses a **dedicated tool-calling loop** (`runRagFlow.ts`) that is fully independent of the MCP server infrastructure. Instead of a rule-based planner or an LLM orchestrator, the LLM itself decides which RAG tool to call on each turn — making retrieval agentic, transparent, and steerable via tool descriptions.
 
 **Key Design Principles:**
 
-1. **Low Latency**: LLM planning is capped at 2 seconds.
-2. **Reliability**: If the LLM planner fails or times out, it instantly falls back to a deterministic regex-based planner.
-3. **Purity**: The `RagAgent` is dependency-injected and doesn't handle auth directly; it receives everything needed for a request at execution time.
+1. **Separation of concerns** — RAG and MCP are completely independent code paths. `runRagFlow` never touches MCP server discovery, URL safety, or HF token forwarding.
+2. **LLM-driven retrieval** — The model decides when to call `list_files`, `retrieve_docs`, or `get_file_chunks` based on tool descriptions and the conversation.
+3. **Critic loop on semantic search** — `retrieve_docs` results are evaluated by `ragCritic`; weak hits trigger query reformulation and a retry (max 2 retries/turn).
+4. **Graceful degradation** — If the model doesn't support tools, `runRagFlow` returns `"not_applicable"` and the caller falls through to MCP or plain generation.
 
 ---
 
@@ -22,82 +23,108 @@ The frontend RAG system utilizes an **Agentic Orchestrator** pattern. Instead of
 ```
 User Message (POST /conversation/[id])
   │
-  ├─ 1. Initialize RagAgent (Injected with generateFn)
+  ├─ 1. ragGate.shouldEngage(userQuery, files) → ENGAGED / SKIPPED
   │
-  ├─ 2. ragAgent.run(userQuery, files, history, messageId, locals)
-  │     │
-  │     ├─ A. Plan Strategy (ragAgent.plan)
-  │     │     ├─ Tries RagPlanner (LLM-based)
-  │     │     │    - System Prompt with all files + history
-  │     │     │    - 2s Timeout guard
-  │     │     └─ Fallback: ragAgentLegacy (Regex-based)
-  │     │
-  │     ├─ B. Execute Plan (ragAgent.execute)
-  │     │     - Parallel fetch via ragClient
-  │     │     - File-specific actions (DEEP_DIVE, SEMANTIC, SKIP)
-  │     │
-  │     └─ C. Merge & Return Chunks
+  ├─ 2. Build ragContext { engaged, inventory, ragClient, chunksAccumulator, criticRetriesUsed: 0 }
   │
-  └─ 3. Inject context into message for LLM generation
+  └─ 3. textGeneration(ctx) → textGenerationWithoutTitle()
+        │
+        ├─ A. ctx.ragContext?.engaged → runRagFlow()
+        │     │
+        │     ├─ Guard: model.supportsTools || forceTools?
+        │     │
+        │     ├─ Advertise tools to LLM: [list_files, retrieve_docs, get_file_chunks]
+        │     │
+        │     └─ Tool-calling loop (max 10 iterations):
+        │           LLM streams → tool_calls detected?
+        │               Yes → dispatchRagToolCalls() → append tool messages → loop
+        │               No  → emit FinalAnswer → return "completed"
+        │
+        ├─ B. "not_applicable" → runToolFlow() (pure MCP, no RAG tools)
+        │
+        └─ C. "not_applicable" → generate() (plain generation fallback)
 ```
 
 ---
 
-## planning Strategies (`RagStrategy`)
+## RAG Tools (advertised to LLM)
 
-The planner selects one of these core strategies:
+| Tool              | Description                                                       | When LLM uses it                                                     | Backend cost                                   |
+| ----------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------- |
+| `list_files`      | Returns all uploaded files with id, name, type, readiness         | Ambiguous query — discovers available files before deciding          | None (reads `ragContext.inventory` in-memory)  |
+| `retrieve_docs`   | Semantic search across uploaded files, top-k chunks by similarity | Targeted question whose answer is in a specific part of a file       | `POST /api/v1/rag/chunk/semanticSearchForChat` |
+| `get_file_chunks` | Sequential read of one file in chunk order                        | Summaries, listing all functions/classes/imports, full-file analysis | `GET /api/v1/rag/file/{fileId}/chunks`         |
 
-| Strategy          | Description                           | Best For...                                |
-| ----------------- | ------------------------------------- | ------------------------------------------ |
-| `NO_RAG`          | No retrieval. Injects file list only. | Metadata queries ("what files do I have?") |
-| `SEMANTIC_SEARCH` | Global cross-file search.             | General technical questions.               |
-| `FILE_SEMANTIC`   | Search within 1-2 specific files.     | Questions about a specific module.         |
-| `FILE_DEEP_DIVE`  | Full read of 1-3 files.               | Summarization of specific files.           |
-| `FULL_CONTEXT`    | Deep dive into ALL available files.   | Global overviews, project structure.       |
-| `HYBRID`          | Per-file mix of Deep Dive/Semantic.   | Complex relational questions ("X vs Y").   |
+### Tool routing rules (enforced via system prompt)
 
----
-
-## Robust Fallback Logic
-
-To ensure the chat never hangs, the system uses a **Tiered Planning** approach:
-
-### Tier 1: LLM Planning (`ragPlanner.ts`)
-
-- **System Prompt:** Instructs the model to return structured JSON.
-- **Constraints:** Max 300 tokens, 0 temperature.
-- **Zod Validation:** Discards hallucinated or malformed JSON.
-- **Hard Limits:** Trims plan to max 3 DEEP_DIVE files and 5 total files.
-
-### Tier 2: Regex Fallback (`ragAgentLegacy.ts`)
-
-- **Deterministic:** Pure regex-based inference.
-- **Instant:** Zero network latency.
-- **Priority:**
-  1. Explicit file + summarize verb -> `FILE_DEEP_DIVE`
-  2. Global summarize -> `FULL_CONTEXT`
-  3. Metadata patterns -> `NO_RAG`
-  4. Code structure keywords -> `HYBRID`
-  5. Default -> `SEMANTIC_SEARCH`
+- `list_files` → unclear query, "what files do I have?", discovering context before retrieval
+- `retrieve_docs` → "how does X work?", cross-file questions, finding specific content
+- `get_file_chunks` → "summarize Y", "list all functions in Z", ANY exhaustive file task
+- **Never** use `retrieve_docs` for exhaustive tasks — it returns top-k, not all content
 
 ---
 
-## Context Optimization
+## Critic Loop (retrieve_docs only)
 
-- **Zero-Latency History**: `historyCompressor.ts` strips noise (like `<think>` blocks) and truncates history into a compact string for the planner, avoiding extra LLM costs.
-- **Strategy-Aware Budget**: `contextBuilder.ts` scales the retrieval window:
-  - Simple queries: **4,000 characters** (faster inference)
-  - HYBRID / FULL_CONTEXT: **8,000 characters** (deeper insight)
+After `retrieve_docs` returns chunks, `ragCritic.evaluate()` scores the quality:
+
+| Verdict | Condition                                                   | Action                                                 |
+| ------- | ----------------------------------------------------------- | ------------------------------------------------------ |
+| `PASS`  | `maxSimilarity >= 0.55` AND at least one `entry`-role chunk | Use chunks as-is                                       |
+| `PASS`  | Graph expansion chunks present with entry role, ratio < 70% | Use chunks as-is                                       |
+| `RETRY` | Weak relevance signal                                       | Reformulate query via LLM (1500ms timeout), retry once |
+| `EMPTY` | Zero chunks returned                                        | Return `<rag_result empty="true"/>`                    |
+
+Cap: `MAX_CRITIC_RETRIES = 2` per turn (`ragContext.criticRetriesUsed` tracks this).
+
+Reformulation calls `generateFromDefaultEndpoint` with a 1500ms `Promise.race` — if the LLM is too slow the original query is retried unchanged.
+
+Results from both the original call and the retry are merged by `mergeChunksById` (highest-similarity wins per unique chunk id).
 
 ---
 
-## Key Files & Roles
+## Agentic Gate (`ragGate.ts`)
 
-| File path                                 | Purpose                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------- |
-| `src/lib/server/rag/ragAgent.ts`          | The main orchestrator. Coordinates planning and parallel execution. |
-| `src/lib/server/rag/ragPlanner.ts`        | The LLM-based strategist. Uses Zod for plan validation.             |
-| `src/lib/server/rag/ragAgentLegacy.ts`    | The deterministic fallback planner using regex rules.               |
-| `src/lib/server/rag/historyCompressor.ts` | Compresses conversation history for efficient planning.             |
-| `src/lib/server/rag/contextBuilder.ts`    | Formats chunks and manages the character-based context budget.      |
-| `src/lib/rag/client.ts`                   | Core RAG client using JWT Authentication.                           |
+Before `runRagFlow` is even called, `shouldEngage(userQuery, files)` decides whether RAG is needed:
+
+```
+files.length === 0 → false (no files, skip RAG entirely)
+Greeting patterns  → false
+Inventory meta     → true  ("what files do I have?")
+File name match    → true  (user named a specific file)
+FILE_REFERENCE_WORDS in query → true
+STRONG_CONTENT_VERBS ("summarize", "review") → true
+CONTENT_VERBS + CODE_REFERENCE_WORDS → true
+GENERAL_KNOWLEDGE_PATTERNS → false
+```
+
+If not engaged, `ragContext.engaged = false` → `runRagFlow` returns `"not_applicable"` immediately.
+
+---
+
+## Multi-Turn Behavior
+
+- **No re-retrieval of previous files** — system prompt instructs the LLM: each user message is an independent task; content from prior turns is already in conversation history.
+- **Chunk accumulation** — all retrieved chunks across loops in one turn are pushed to `ragContext.chunksAccumulator`, which is persisted to the message metadata after generation for citation display.
+- **Sequential read chunks** have `similarity: null` — the UI similarity bar is hidden for `get_file_chunks` results (sequential order has no semantic relevance score).
+
+---
+
+## Key Files
+
+| File                                                  | Purpose                                                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `src/lib/server/textGeneration/mcp/runRagFlow.ts`     | Self-contained RAG tool-calling loop. Owns all RAG tool dispatch.                                              |
+| `src/lib/server/textGeneration/index.ts`              | Orchestrates: RAG → MCP → plain gen                                                                            |
+| `src/lib/server/rag/ragTools.ts`                      | Tool definitions (`LIST_FILES_TOOL`, `RETRIEVE_DOCS_TOOL`, `GET_FILE_CHUNKS_TOOL`), handlers, `RAG_TOOL_NAMES` |
+| `src/lib/server/rag/ragCritic.ts`                     | `evaluate()` + `reformulateQuery()` — quality gate on semantic search                                          |
+| `src/lib/server/rag/ragGate.ts`                       | `shouldEngage()` — determines if RAG should run for this turn                                                  |
+| `src/lib/server/rag/ragRouter.ts`                     | File-name matching helpers used by ragGate                                                                     |
+| `src/lib/server/rag/contextBuilder.ts`                | Formats retrieved chunks into `<coderef>` XML for LLM context                                                  |
+| `src/lib/server/rag/inventoryInjector.ts`             | Injects file inventory into the system prompt                                                                  |
+| `src/lib/server/rag/historyHygiene.ts`                | Strips `<think>` blocks and noise from conversation history                                                    |
+| `src/lib/server/rag/client.ts`                        | Server-side `RAGClient` with JWT authentication                                                                |
+| `src/lib/rag/client.ts`                               | Shared types (`ChatFileChunk`, `RagFileMetadata`) and browser client                                           |
+| `src/lib/server/textGeneration/utils/toolPrompt.ts`   | Builds system prompt with tool routing rules for the LLM                                                       |
+| `src/lib/server/textGeneration/mcp/runMcpFlow.ts`     | Pure MCP flow — zero RAG knowledge                                                                             |
+| `src/lib/server/textGeneration/mcp/toolInvocation.ts` | MCP tool execution — zero RAG knowledge                                                                        |

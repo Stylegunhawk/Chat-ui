@@ -4,11 +4,17 @@ import ArtifactRenderer from "$lib/components/tools/ArtifactRenderer.svelte";
 import FallbackRenderer from "$lib/components/tools/FallbackRenderer.svelte";
 import InlineRenderer from "$lib/components/tools/InlineRenderer.svelte";
 import HiddenRenderer from "$lib/components/tools/HiddenRenderer.svelte";
+import GraphRenderer from "$lib/components/tools/GraphRenderer.svelte";
 
 export type ToolStreamMode = "buffered" | "text" | "none";
 
 export interface ToolRendererResolution {
-	component: typeof ArtifactRenderer | typeof FallbackRenderer | typeof InlineRenderer | typeof HiddenRenderer;
+	component:
+		| typeof ArtifactRenderer
+		| typeof FallbackRenderer
+		| typeof InlineRenderer
+		| typeof HiddenRenderer
+		| typeof GraphRenderer;
 	streamMode: ToolStreamMode;
 	suppressAssistantText: boolean;
 }
@@ -42,6 +48,11 @@ const registry: Record<string, Resolver> = {
 		streamMode: "none",
 		suppressAssistantText: false,
 	}),
+	get_code_graph_related: () => ({
+		component: GraphRenderer,
+		streamMode: "none",
+		suppressAssistantText: false,
+	}),
 };
 
 export function resolveToolRenderer(vm: ToolRunViewModel): ToolRendererResolution {
@@ -49,4 +60,3 @@ export function resolveToolRenderer(vm: ToolRunViewModel): ToolRendererResolutio
 	const resolver = registry[name] ?? fallbackResolver;
 	return resolver(vm);
 }
-

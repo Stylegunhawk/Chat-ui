@@ -87,26 +87,28 @@ A self-contained, ~250-line RAG tool-calling loop. No imports from `runMcpFlow.t
 
 ```typescript
 export type RunRagFlowContext = Pick<
-  TextGenerationContext,
-  "model" | "conv" | "locals" | "forceTools" | "ragContext"
+	TextGenerationContext,
+	"model" | "conv" | "locals" | "forceTools" | "ragContext"
 > & {
-  messages: EndpointMessage[];
-  preprompt?: string;
-  abortSignal?: AbortSignal;
-  abortController?: AbortController;
-  promptedAt?: Date;
+	messages: EndpointMessage[];
+	preprompt?: string;
+	abortSignal?: AbortSignal;
+	abortController?: AbortController;
+	promptedAt?: Date;
 };
 ```
 
 **Return type:** `ToolFlowResult` — `"completed" | "not_applicable" | "aborted"` (same as `runMcpFlow.ts`).
 
 **Guard conditions (return `"not_applicable"` immediately):**
+
 - `ragContext?.engaged !== true`
 - Model does not support tools: `!model.supportsTools && !forceTools`
 
 **Tool list:** `[RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL]` — imported from `ragTools.ts`.
 
 **System prompt assembly:**
+
 ```
 buildToolPreprompt([RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL])
   + preprompt (if any)
@@ -120,14 +122,14 @@ The `## Uploaded Files` inventory is already injected into the last user message
 ```
 for loop in 0..9:
   checkAborted() → "aborted"
-  
+
   stream OpenAI completion (same base params: model, temperature, top_p, stop, max_tokens, tools, tool_choice="auto")
-  
+
   for each token chunk:
     handle reasoning delta → <think> wrapping (same as runMcpFlow)
     yield Stream update (only when no tool calls in flight)
     checkAborted()
-  
+
   if tool calls present:
     if missing tool_call id → non-stream retry to recover ids (same pattern as runMcpFlow)
     for await (const event of dispatchRagToolCalls(calls, ragContext)):
@@ -135,7 +137,7 @@ for loop in 0..9:
       if event.type === "complete" → collect toolMessages
     append assistantToolMessage + toolMessages to messagesOpenAI
     continue loop
-  
+
   // No tool calls — finalize
   if thinkOpen → close </think>
   yield FinalAnswer
@@ -150,6 +152,7 @@ return "not_applicable"  // triggers plain generation fallback
 A private `dispatchRagToolCalls()` async generator handles tool execution, yielding `MessageUpdate` events for real-time UI (ToolCall, ETA, Result) exactly as `executeToolCalls` does today. The outer loop consumes it with `for await`:
 
 **For `retrieve_docs`:**
+
 1. `handleRetrieveDocs(args, { ragClient, inventory })` → `RagToolResult`
 2. `ragCritic.evaluate(result.chunks)` → verdict
 3. If `verdict === "RETRY"` and `ragContext.criticRetriesUsed < 2`:
@@ -162,6 +165,7 @@ A private `dispatchRagToolCalls()` async generator handles tool execution, yield
 5. Push chunks to `ragContext.chunksAccumulator`
 
 **For `get_file_chunks`:**
+
 1. `handleGetFileChunks(args, { ragClient, inventory })` → `RagToolResult`
 2. No critic (similarity=1.0, sequential read — critic always passes; skip it)
 3. Format: `<rag_result tool="get_file_chunks">...chunks...</rag_result>`
@@ -172,6 +176,7 @@ A private `dispatchRagToolCalls()` async generator handles tool execution, yield
 **Chunk formatting:** `buildRagContextMessage(chunks)` from `contextBuilder.ts` — unchanged.
 
 **Tool result message for OpenAI history:**
+
 ```typescript
 { role: "tool", tool_call_id: call.id, content: "<rag_result ...>...</rag_result>" }
 ```
@@ -179,44 +184,53 @@ A private `dispatchRagToolCalls()` async generator handles tool execution, yield
 ### 4.3 Modified: `src/lib/server/textGeneration/index.ts`
 
 **Before (broken):**
+
 ```typescript
 const mcpGen = runToolFlow({ ...ctx, ragFiles: ctx.ragFiles }); // ragContext missing
 ```
 
 **After:**
+
 ```typescript
 // 1. RAG-only tool loop (when gate engaged)
 if (ctx.ragContext?.engaged) {
-  const ragGen = runRagFlow({
-    model: ctx.model, conv, messages: processedMessages,
-    locals: ctx.locals, preprompt,
-    abortSignal: ctx.abortController.signal,
-    abortController: ctx.abortController,
-    promptedAt: ctx.promptedAt,
-    ragContext: ctx.ragContext,
-    forceTools: ctx.forceTools,
-  });
-  const ragResult = yield* drainGenerator(ragGen);
-  if (ragResult === "completed" || ragResult === "aborted") {
-    done.abort(); return;
-  }
-  // "not_applicable" → fall through to MCP
+	const ragGen = runRagFlow({
+		model: ctx.model,
+		conv,
+		messages: processedMessages,
+		locals: ctx.locals,
+		preprompt,
+		abortSignal: ctx.abortController.signal,
+		abortController: ctx.abortController,
+		promptedAt: ctx.promptedAt,
+		ragContext: ctx.ragContext,
+		forceTools: ctx.forceTools,
+	});
+	const ragResult = yield * drainGenerator(ragGen);
+	if (ragResult === "completed" || ragResult === "aborted") {
+		done.abort();
+		return;
+	}
+	// "not_applicable" → fall through to MCP
 }
 
 // 2. MCP tool loop (pure MCP, no ragContext)
 const mcpGen = runToolFlow({
-  model: ctx.model, conv, messages: processedMessages,
-  // ... all existing fields ...
-  ragFiles: ctx.ragFiles,
-  // ragContext intentionally not forwarded
+	model: ctx.model,
+	conv,
+	messages: processedMessages,
+	// ... all existing fields ...
+	ragFiles: ctx.ragFiles,
+	// ragContext intentionally not forwarded
 });
-const mcpResult = yield* drainGenerator(mcpGen);
+const mcpResult = yield * drainGenerator(mcpGen);
 if (mcpResult !== "not_applicable") {
-  done.abort(); return;
+	done.abort();
+	return;
 }
 
 // 3. Plain generation fallback
-yield* generate({ ...ctx, messages: processedMessages }, preprompt);
+yield * generate({ ...ctx, messages: processedMessages }, preprompt);
 done.abort();
 ```
 
@@ -225,6 +239,7 @@ done.abort();
 ### 4.4 Modified: `src/lib/server/textGeneration/mcp/runMcpFlow.ts`
 
 Remove:
+
 - Import: `RETRIEVE_DOCS_TOOL`, `GET_FILE_CHUNKS_TOOL` from `ragTools.ts`
 - The two `if (ragContext?.engaged)` bypass blocks in the zero-servers checks (lines ~171–179 and ~201–210)
 - The redundant `if (servers.length === 0 && !ragContext?.engaged)` check (line ~276)
@@ -237,6 +252,7 @@ After removal, `RunToolFlowContext` no longer includes `ragContext`. `runMcpFlow
 ### 4.5 Modified: `src/lib/server/textGeneration/mcp/toolInvocation.ts`
 
 Remove:
+
 - The `if (RAG_TOOL_NAMES.has(p.call.name) && ragContext)` dispatch block (~lines 359–544)
 - The `if (RAG_TOOL_NAMES.has(p.call.name) && !ragContext)` warning (~lines 549–553)
 - `mergeChunksById` helper function
@@ -300,17 +316,17 @@ index.ts
 
 ## 6. Error Handling & Robustness
 
-| Scenario | Behaviour |
-|---|---|
-| RAG backend unreachable (network error) | `handleRetrieveDocs` returns `{ chunks:[], error: "..." }` → `<rag_result error="true"/>` → LLM explains to user → flow completes normally |
-| JWT missing / expired | `RAGClient.getJWT()` throws → caught in handler → error result to LLM → no crash |
-| JWT 401 response | `makeRequest()` auto-refreshes once and retries — existing behaviour in `client.ts` |
-| All fileIds unknown | `handleRetrieveDocs` returns error before calling backend — no HTTP request made |
-| File still embedding | Handler returns `"still being processed"` error — LLM tells user to wait |
-| Critic says RETRY, retries exhausted | Returns merged chunks from original + retry result with best verdict achievable |
-| Loop exhausted (10 iterations, all tool calls) | Returns `"not_applicable"` → `index.ts` falls through to plain generation |
-| Abort signal fired | `checkAborted()` at loop start and mid-stream → returns `"aborted"` → no further yields |
-| Model doesn't support tools | Guard returns `"not_applicable"` → MCP tried → fallback to plain gen |
+| Scenario                                       | Behaviour                                                                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| RAG backend unreachable (network error)        | `handleRetrieveDocs` returns `{ chunks:[], error: "..." }` → `<rag_result error="true"/>` → LLM explains to user → flow completes normally |
+| JWT missing / expired                          | `RAGClient.getJWT()` throws → caught in handler → error result to LLM → no crash                                                           |
+| JWT 401 response                               | `makeRequest()` auto-refreshes once and retries — existing behaviour in `client.ts`                                                        |
+| All fileIds unknown                            | `handleRetrieveDocs` returns error before calling backend — no HTTP request made                                                           |
+| File still embedding                           | Handler returns `"still being processed"` error — LLM tells user to wait                                                                   |
+| Critic says RETRY, retries exhausted           | Returns merged chunks from original + retry result with best verdict achievable                                                            |
+| Loop exhausted (10 iterations, all tool calls) | Returns `"not_applicable"` → `index.ts` falls through to plain generation                                                                  |
+| Abort signal fired                             | `checkAborted()` at loop start and mid-stream → returns `"aborted"` → no further yields                                                    |
+| Model doesn't support tools                    | Guard returns `"not_applicable"` → MCP tried → fallback to plain gen                                                                       |
 
 ---
 
@@ -318,18 +334,18 @@ index.ts
 
 Every decision point gets a `console.log` (dev) or `logger.info` (structured):
 
-| Event | Log |
-|---|---|
-| Flow entered | `[RAG] runRagFlow start (files=${inventory.length}, loop cap=10)` |
-| Guard: model no tools | `[RAG] model ${model.id} does not support tools — skipping` |
-| Loop iteration | `[RAG] loop ${loop} starting` |
-| Tool called | `[RAG] LLM called ${toolName} args=${JSON.stringify(args)}` |
-| Backend response | `[RAG] ${toolName} returned chunks=${n} error=${err} (${ms}ms)` |
-| Critic verdict | `[RAG] critic ${verdict} (maxSim=${x}, entry=${n}, graphOnly=${r})` |
-| Critic retry | `[RAG] critic RETRY → reformulated: "${query}"` |
-| After retry | `[RAG] after retry chunks=${n} new verdict=${verdict}` |
-| Final answer | `[RAG] final answer emitted on loop ${loop} (${chars} chars)` |
-| Fallback | `[RAG] loop exhausted → not_applicable` |
+| Event                 | Log                                                                 |
+| --------------------- | ------------------------------------------------------------------- |
+| Flow entered          | `[RAG] runRagFlow start (files=${inventory.length}, loop cap=10)`   |
+| Guard: model no tools | `[RAG] model ${model.id} does not support tools — skipping`         |
+| Loop iteration        | `[RAG] loop ${loop} starting`                                       |
+| Tool called           | `[RAG] LLM called ${toolName} args=${JSON.stringify(args)}`         |
+| Backend response      | `[RAG] ${toolName} returned chunks=${n} error=${err} (${ms}ms)`     |
+| Critic verdict        | `[RAG] critic ${verdict} (maxSim=${x}, entry=${n}, graphOnly=${r})` |
+| Critic retry          | `[RAG] critic RETRY → reformulated: "${query}"`                     |
+| After retry           | `[RAG] after retry chunks=${n} new verdict=${verdict}`              |
+| Final answer          | `[RAG] final answer emitted on loop ${loop} (${chars} chars)`       |
+| Fallback              | `[RAG] loop exhausted → not_applicable`                             |
 
 ---
 
@@ -351,14 +367,14 @@ ragContext?: {
 
 ```typescript
 export type RunRagFlowContext = Pick<
-  TextGenerationContext,
-  "model" | "conv" | "locals" | "forceTools" | "ragContext"
+	TextGenerationContext,
+	"model" | "conv" | "locals" | "forceTools" | "ragContext"
 > & {
-  messages: EndpointMessage[];
-  preprompt?: string;
-  abortSignal?: AbortSignal;
-  abortController?: AbortController;
-  promptedAt?: Date;
+	messages: EndpointMessage[];
+	preprompt?: string;
+	abortSignal?: AbortSignal;
+	abortController?: AbortController;
+	promptedAt?: Date;
 };
 ```
 
@@ -370,15 +386,15 @@ export type RunRagFlowContext = Pick<
 
 ## 9. File Change Summary
 
-| File | Change | Reason |
-|---|---|---|
-| `src/lib/server/textGeneration/mcp/runRagFlow.ts` | **New** (~250 lines) | RAG-only tool loop |
-| `src/lib/server/textGeneration/index.ts` | Modify (~20 lines) | Try RAG first, forward `ragContext` |
-| `src/lib/server/textGeneration/mcp/runMcpFlow.ts` | Modify (delete ~40 lines) | Remove RAG coupling |
-| `src/lib/server/textGeneration/mcp/toolInvocation.ts` | Modify (delete ~120 lines) | Remove RAG dispatch |
-| Everything under `src/lib/server/rag/` | **Unchanged** | Handlers, critic, gate, client all stable |
-| `src/routes/conversation/[id]/+server.ts` | **Unchanged** | ragContext construction is already correct |
-| `src/lib/server/textGeneration/types.ts` | **Unchanged** | ragContext type already defined |
+| File                                                  | Change                     | Reason                                     |
+| ----------------------------------------------------- | -------------------------- | ------------------------------------------ |
+| `src/lib/server/textGeneration/mcp/runRagFlow.ts`     | **New** (~250 lines)       | RAG-only tool loop                         |
+| `src/lib/server/textGeneration/index.ts`              | Modify (~20 lines)         | Try RAG first, forward `ragContext`        |
+| `src/lib/server/textGeneration/mcp/runMcpFlow.ts`     | Modify (delete ~40 lines)  | Remove RAG coupling                        |
+| `src/lib/server/textGeneration/mcp/toolInvocation.ts` | Modify (delete ~120 lines) | Remove RAG dispatch                        |
+| Everything under `src/lib/server/rag/`                | **Unchanged**              | Handlers, critic, gate, client all stable  |
+| `src/routes/conversation/[id]/+server.ts`             | **Unchanged**              | ragContext construction is already correct |
+| `src/lib/server/textGeneration/types.ts`              | **Unchanged**              | ragContext type already defined            |
 
 Net change: +250 lines added, ~160 lines deleted. Net +90 lines, but with a much cleaner boundary.
 

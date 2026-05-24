@@ -16,4 +16,3 @@
 		<MarkdownRenderer content={text} />
 	</div>
 {/if}
-

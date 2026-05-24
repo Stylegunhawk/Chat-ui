@@ -18,11 +18,15 @@
 	});
 </script>
 
-<div class="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+<div
+	class="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+>
 	<div class="mb-1 flex items-center justify-between">
 		<span class="font-semibold">
 			Tool:
-			<code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+			<code
+				class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+			>
 				{vm.toolName ?? "unknown"}
 			</code>
 		</span>
@@ -36,8 +40,8 @@
 	</div>
 
 	{#if isOpen}
-		<pre class="mt-1 max-h-64 overflow-auto rounded bg-gray-50 p-2 font-mono text-[11px] leading-snug dark:bg-gray-950">
+		<pre
+			class="mt-1 max-h-64 overflow-auto rounded bg-gray-50 p-2 font-mono text-[11px] leading-snug dark:bg-gray-950">
 {prettyPayload}</pre>
 	{/if}
 </div>
-

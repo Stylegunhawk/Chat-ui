@@ -8,6 +8,7 @@ import {
 } from "$lib/types/MessageUpdate";
 import { generate } from "./generate";
 import { runToolFlow } from "./mcp/runMcpFlow";
+import { runRagFlow } from "./mcp/runRagFlow";
 import { mergeAsyncGenerators } from "$lib/utils/mergeAsyncGenerators";
 import type { TextGenerationContext } from "./types";
 
@@ -49,9 +50,36 @@ async function* textGenerationWithoutTitle(
 
 	const processedMessages = await preprocessMessages(messages, convId);
 
-	// Try tool flow first (handles MCP servers + local RAG/client-side tools);
-	// fall back to default generation if no tools are applicable.
 	try {
+		// ── 1. Agentic RAG loop (when gate engaged) ───────────────────────────
+		// Owns all retrieve_docs / get_file_chunks calls. MCP flow never sees them.
+		if (ctx.ragContext?.engaged) {
+			const ragGen = runRagFlow({
+				model: ctx.model,
+				conv,
+				messages: processedMessages,
+				locals: ctx.locals,
+				forceTools: ctx.forceTools,
+				preprompt,
+				abortSignal: ctx.abortController.signal,
+				abortController: ctx.abortController,
+				promptedAt: ctx.promptedAt,
+				ragContext: ctx.ragContext,
+			});
+			let ragStep = await ragGen.next();
+			while (!ragStep.done) {
+				yield ragStep.value;
+				ragStep = await ragGen.next();
+			}
+			const ragResult = ragStep.value;
+			if (ragResult === "completed" || ragResult === "aborted") {
+				done.abort();
+				return;
+			}
+			// "not_applicable" → model doesn't support tools → fall through to MCP / plain gen
+		}
+
+		// ── 2. MCP tool loop (pure MCP — no RAG tools) ───────────────────────
 		const mcpGen = runToolFlow({
 			model: ctx.model,
 			conv,
@@ -67,20 +95,20 @@ async function* textGenerationWithoutTitle(
 			promptedAt: ctx.promptedAt,
 			ragFiles: ctx.ragFiles,
 		});
+		let mcpStep = await mcpGen.next();
+		while (!mcpStep.done) {
+			yield mcpStep.value;
+			mcpStep = await mcpGen.next();
+		}
+		const mcpResult = mcpStep.value;
+		if (mcpResult !== "not_applicable") {
+			done.abort();
+			return;
+		}
 
-		let step = await mcpGen.next();
-		while (!step.done) {
-			yield step.value;
-			step = await mcpGen.next();
-		}
-		const mcpResult = step.value;
-		if (mcpResult === "not_applicable") {
-			// fallback to normal text generation
-			yield* generate({ ...ctx, messages: processedMessages }, preprompt);
-		}
-		// If mcpResult is "completed" or "aborted", don't fall back
+		// ── 3. Plain generation fallback ──────────────────────────────────────
+		yield* generate({ ...ctx, messages: processedMessages }, preprompt);
 	} catch (err) {
-		// Don't fall back on abort errors - user intentionally stopped
 		const isAbort =
 			ctx.abortController.signal.aborted ||
 			(err instanceof Error &&
@@ -88,7 +116,6 @@ async function* textGenerationWithoutTitle(
 					err.name === "APIUserAbortError" ||
 					err.message.includes("Request was aborted")));
 		if (!isAbort) {
-			// On non-abort MCP error, fall back to normal generation
 			yield* generate({ ...ctx, messages: processedMessages }, preprompt);
 		}
 	}

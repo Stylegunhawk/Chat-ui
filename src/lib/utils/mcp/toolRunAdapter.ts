@@ -51,7 +51,8 @@ export function buildToolRunViewModel(updates: EnrichedToolUpdate[]): ToolRunVie
 
 	for (const update of updates) {
 		if (typeof update.updatedAt === "number") {
-			lastUpdatedAt = lastUpdatedAt == null ? update.updatedAt : Math.max(lastUpdatedAt, update.updatedAt);
+			lastUpdatedAt =
+				lastUpdatedAt == null ? update.updatedAt : Math.max(lastUpdatedAt, update.updatedAt);
 		}
 
 		if (isMessageToolCallUpdate(update)) {
@@ -101,4 +102,3 @@ export function buildToolRunViewModel(updates: EnrichedToolUpdate[]): ToolRunVie
 		payload,
 	};
 }
-

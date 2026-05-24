@@ -43,8 +43,8 @@
 		{#if isLoading}
 			Generating dataset…
 		{:else}
-			Dataset generated{#if rowCount !== null} ({rowCount} rows){/if}
+			Dataset generated{#if rowCount !== null}
+				({rowCount} rows){/if}
 		{/if}
 	</span>
 </button>
-

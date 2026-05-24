@@ -41,7 +41,11 @@
 	<div class="inline-flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
 		<svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none">
 			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+			<path
+				class="opacity-75"
+				fill="currentColor"
+				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+			/>
 		</svg>
 		<span>Generating cheatsheet…</span>
 	</div>
@@ -58,7 +62,9 @@
 				<span class="text-sm font-medium text-gray-800 dark:text-gray-200">
 					Cheatsheet
 					{#if sectionCount > 0}
-						<span class="font-normal text-gray-500 dark:text-gray-400">({sectionCount} sections)</span>
+						<span class="font-normal text-gray-500 dark:text-gray-400"
+							>({sectionCount} sections)</span
+						>
 					{/if}
 				</span>
 			</div>

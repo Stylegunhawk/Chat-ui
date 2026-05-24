@@ -256,6 +256,31 @@ export class RAGClient {
 	}
 
 	/**
+	 * Fetch code entities related to a given class or function via the dependency graph.
+	 */
+	async getGraphRelated(
+		entity: string,
+		depth = 2,
+		max = 10,
+		includeSnippets = false
+	): Promise<unknown> {
+		const jwt = await this.getJWT();
+		const params = new URLSearchParams({ entity, depth: String(depth), max: String(max) });
+		if (includeSnippets) params.set("include_snippets", "true");
+
+		const response = await this.makeRequest(
+			`${this.baseUrl}/api/v1/rag/graph/related?${params.toString()}`,
+			{ headers: { Authorization: `Bearer ${jwt}` } }
+		);
+
+		if (!response.ok) {
+			throw new Error(`Graph related failed: ${response.status} ${response.statusText}`);
+		}
+
+		return response.json();
+	}
+
+	/**
 	 * Delete file from RAG
 	 */
 	async deleteFile(fileId: string): Promise<void> {

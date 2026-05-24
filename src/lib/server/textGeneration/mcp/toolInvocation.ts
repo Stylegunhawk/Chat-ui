@@ -4,12 +4,7 @@ import type { MessageUpdate } from "$lib/types/MessageUpdate";
 import { MessageToolUpdateType, MessageUpdateType } from "$lib/types/MessageUpdate";
 import type { MessageToolConfirmUpdate } from "$lib/types/MessageUpdate";
 import { ToolResultStatus } from "$lib/types/Tool";
-import type { ChatFileChunk, RagFileMetadata } from "$lib/rag/client";
-import type { RAGClient } from "$lib/server/rag/client";
-import { buildRagContextMessage } from "$lib/server/rag/contextBuilder";
-import { evaluate, reformulateQuery } from "$lib/server/rag/ragCritic";
-import { RAG_TOOL_NAMES, handleGetFileChunks, handleRetrieveDocs } from "$lib/server/rag/ragTools";
-import { generateFromDefaultEndpoint } from "$lib/server/generateFromDefaultEndpoint";
+import type { RagFileMetadata } from "$lib/rag/client";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { McpToolMapping } from "$lib/server/mcp/tools";
 import type { McpServerConfig } from "$lib/server/mcp/httpClient";
@@ -52,13 +47,6 @@ export interface ExecuteToolCallsParams {
 	toolTimeoutMs?: number;
 	locals?: App.Locals;
 	ragFiles?: RagFileMetadata[];
-	ragContext?: {
-		engaged: boolean;
-		inventory: RagFileMetadata[];
-		ragClient: RAGClient;
-		chunksAccumulator: ChatFileChunk[];
-		criticRetriesUsed: number;
-	};
 }
 
 export interface ToolCallExecutionResult {
@@ -82,32 +70,6 @@ const serverMap = (servers: McpServerConfig[]): Map<string, McpServerConfig> => 
 };
 
 const CLIENT_SIDE_TOOLS = new Set<string>(["generate_artifact"]);
-const MAX_CRITIC_RETRIES_PER_TURN = 2;
-
-function escapeXmlAttribute(value: string): string {
-	return value
-		.replace(/&/g, "&amp;")
-		.replace(/"/g, "&quot;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;");
-}
-
-function mergeChunksById(existing: ChatFileChunk[], retry: ChatFileChunk[]): ChatFileChunk[] {
-	const merged = new Map<string, ChatFileChunk>();
-	for (const chunk of [...existing, ...retry]) {
-		const prev = merged.get(chunk.id);
-		if (!prev) {
-			merged.set(chunk.id, chunk);
-			continue;
-		}
-		const prevSimilarity = prev.similarity ?? Number.NEGATIVE_INFINITY;
-		const nextSimilarity = chunk.similarity ?? Number.NEGATIVE_INFINITY;
-		if (nextSimilarity > prevSimilarity) {
-			merged.set(chunk.id, chunk);
-		}
-	}
-	return [...merged.values()];
-}
 
 export async function* executeToolCalls({
 	calls,
@@ -121,7 +83,6 @@ export async function* executeToolCalls({
 	toolTimeoutMs,
 	locals,
 	ragFiles,
-	ragContext,
 }: ExecuteToolCallsParams): AsyncGenerator<ToolExecutionEvent, void, undefined> {
 	const effectiveTimeoutMs = toolTimeoutMs ?? getMcpToolTimeoutMs();
 	const toolMessages: ChatCompletionMessageParam[] = [];
@@ -354,202 +315,6 @@ export async function* executeToolCalls({
 				message,
 			});
 			return;
-		}
-
-		if (RAG_TOOL_NAMES.has(p.call.name) && ragContext) {
-			console.log(
-				`[RAG] dispatch START tool=${p.call.name} args=${JSON.stringify(p.paramsClean)}`
-			);
-			const dispatchStartTime = Date.now();
-			try {
-				const ragToolCtx = {
-					ragClient: ragContext.ragClient,
-					inventory: ragContext.inventory,
-				};
-				const toolName = p.call.name;
-				let result:
-					| Awaited<ReturnType<typeof handleRetrieveDocs>>
-					| Awaited<ReturnType<typeof handleGetFileChunks>>;
-				let verdictValue: string | undefined;
-
-				if (toolName === "retrieve_docs") {
-					console.log(`[RAG] handleRetrieveDocs calling backend...`);
-					result = await handleRetrieveDocs(
-						p.argsObj as unknown as Parameters<typeof handleRetrieveDocs>[0],
-						ragToolCtx
-					);
-					console.log(
-						`[RAG] handleRetrieveDocs returned chunks=${result.chunks?.length ?? 0} error=${result.error ?? "none"} (${Date.now() - dispatchStartTime}ms)`
-					);
-					let verdict = evaluate(result.chunks ?? []);
-					verdictValue = verdict.verdict;
-					console.log(
-						`[RAG] Critic verdict: ${verdict.verdict} (maxSim=${verdict.signals.maxSimilarity.toFixed(2)}, entry=${verdict.signals.entryCount}, graphOnly=${verdict.signals.graphOnlyRatio.toFixed(2)})`
-					);
-
-					if (
-						verdict.verdict === "RETRY" &&
-						ragContext.criticRetriesUsed < MAX_CRITIC_RETRIES_PER_TURN
-					) {
-						console.log(
-							`[RAG] Critic firing RETRY (retriesUsed=${ragContext.criticRetriesUsed}/${MAX_CRITIC_RETRIES_PER_TURN})`
-						);
-						const originalQuery = typeof p.argsObj.query === "string" ? p.argsObj.query : "";
-						const CRITIC_TIMEOUT_MS = 1500;
-						const rewrittenQuery = await reformulateQuery({
-							userQuery: originalQuery,
-							fileNames: ragContext.inventory.map((f) => f.name),
-							maxSim: verdict.signals.maxSimilarity,
-							callLlm: (prompt: string) => {
-								// Race the LLM call against the spec'd 1.5s timeout (§7.2).
-								// On timeout, the callLlm rejection makes reformulateQuery fall
-								// back to its templated form.
-								const llmCall = (async () => {
-									const generation = generateFromDefaultEndpoint({
-										messages: [{ from: "user", content: prompt }],
-										locals,
-									});
-									let streamed = "";
-									let step = await generation.next();
-									while (!step.done) {
-										if (step.value.type === MessageUpdateType.Stream) {
-											streamed += step.value.token ?? "";
-										}
-										step = await generation.next();
-									}
-									const finalText = typeof step.value === "string" ? step.value : "";
-									return finalText.trim().length > 0 ? finalText.trim() : streamed.trim();
-								})();
-								const timeout = new Promise<string>((_, reject) => {
-									setTimeout(
-										() => reject(new Error(`reformulator timeout after ${CRITIC_TIMEOUT_MS}ms`)),
-										CRITIC_TIMEOUT_MS
-									);
-								});
-								return Promise.race([llmCall, timeout]);
-							},
-						});
-
-						const trimmedRewrite = typeof rewrittenQuery === "string" ? rewrittenQuery.trim() : "";
-						console.log(`[RAG] Reformulated query: "${trimmedRewrite}"`);
-						if (trimmedRewrite.length > 0) {
-							console.log(`[RAG] Retry backend call with reformulated query...`);
-							const retryResult = await handleRetrieveDocs(
-								{
-									...(p.argsObj as unknown as Parameters<typeof handleRetrieveDocs>[0]),
-									query: trimmedRewrite,
-									rewriteQuery: trimmedRewrite,
-								},
-								ragToolCtx
-							);
-							result = {
-								...result,
-								chunks: mergeChunksById(result.chunks ?? [], retryResult.chunks ?? []),
-								error: result.error ?? retryResult.error,
-							};
-							verdict = evaluate(result.chunks ?? []);
-							verdictValue = verdict.verdict;
-							ragContext.criticRetriesUsed += 1;
-							console.log(
-								`[RAG] After retry: chunks=${result.chunks?.length ?? 0}, new verdict=${verdict.verdict}`
-							);
-						}
-					}
-				} else {
-					console.log(`[RAG] handleGetFileChunks calling backend...`);
-					result = await handleGetFileChunks(
-						p.argsObj as unknown as Parameters<typeof handleGetFileChunks>[0],
-						ragToolCtx
-					);
-					console.log(
-						`[RAG] handleGetFileChunks returned chunks=${result.chunks?.length ?? 0} error=${result.error ?? "none"} (${Date.now() - dispatchStartTime}ms)`
-					);
-				}
-
-				const resultChunks = Array.isArray(result.chunks) ? result.chunks : [];
-				ragContext.chunksAccumulator.push(...resultChunks);
-				console.log(
-					`[RAG] dispatch DONE tool=${p.call.name} chunks=${resultChunks.length} totalTime=${Date.now() - dispatchStartTime}ms (accumulator total=${ragContext.chunksAccumulator.length})`
-				);
-
-				let output: string;
-				if (resultChunks.length > 0) {
-					const ragMessage = buildRagContextMessage(resultChunks);
-					const attrs = [
-						`tool="${toolName}"`,
-						verdictValue ? `verdict="${escapeXmlAttribute(verdictValue)}"` : undefined,
-						result.error ? `error="true"` : undefined,
-					]
-						.filter(Boolean)
-						.join(" ");
-					output = `<rag_result ${attrs}>${ragMessage.content}</rag_result>`;
-				} else if (result.error) {
-					output = `<rag_result tool="${toolName}" error="true" message="${escapeXmlAttribute(result.error)}"/>`;
-				} else {
-					output = `<rag_result tool="${toolName}" empty="true"/>`;
-				}
-
-				results.push({
-					index,
-					output,
-					structured: {
-						tool: toolName,
-						chunks: resultChunks,
-						error: result.error,
-						verdict: verdictValue,
-					},
-					uuid: p.uuid,
-					paramsClean: p.paramsClean,
-				});
-				updatesQueue.push({
-					type: MessageUpdateType.Tool,
-					subtype: MessageToolUpdateType.Result,
-					uuid: p.uuid,
-					result: {
-						status: ToolResultStatus.Success,
-						call: { name: p.call.name, parameters: p.paramsClean },
-						outputs: [
-							{
-								text: output,
-								structured: {
-									chunks: resultChunks,
-									error: result.error,
-									verdict: verdictValue,
-								},
-							} as unknown as Record<string, unknown>,
-						],
-						display: true,
-					},
-				});
-				console.log(`[RAG] result pushed to queue (output length=${output.length} chars)`);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				console.error(
-					`[RAG] dispatch THREW after ${Date.now() - dispatchStartTime}ms:`,
-					message
-				);
-				results.push({
-					index,
-					error: message,
-					uuid: p.uuid,
-					paramsClean: p.paramsClean,
-				});
-				updatesQueue.push({
-					type: MessageUpdateType.Tool,
-					subtype: MessageToolUpdateType.Error,
-					uuid: p.uuid,
-					message,
-				});
-			}
-			return;
-		}
-
-		// Log if a known RAG tool name came in but ragContext is missing (would otherwise
-		// silently fall through to "Unknown MCP function" branch)
-		if (RAG_TOOL_NAMES.has(p.call.name) && !ragContext) {
-			console.warn(
-				`[RAG] tool ${p.call.name} requested but ragContext is undefined — RAG path skipped, will return "Unknown MCP function" error to LLM`
-			);
 		}
 
 		const mappingEntry = mapping[p.call.name];

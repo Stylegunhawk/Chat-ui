@@ -1,14 +1,11 @@
 /**
  * runToolFlow — Generic LLM tool-calling orchestrator.
  *
- * Despite its location under `mcp/`, this loop dispatches THREE classes of tools:
+ * Despite its location under `mcp/`, this loop dispatches TWO classes of tools:
  *   1. MCP server tools (GitHub, Exa, etc.) — fetched dynamically per-server
- *   2. Local agentic RAG tools (retrieve_docs, get_file_chunks) — when ragContext.engaged
- *   3. Client-side tools (generate_artifact) — handled in toolInvocation.ts
+ *   2. Client-side tools (generate_artifact) — handled in toolInvocation.ts
  *
- * The function bails out only when there are NO tools to advertise from any source.
- * It used to bail when zero MCP servers were configured, which was a false coupling —
- * RAG and client-side tools work fine without MCP servers.
+ * RAG tools are handled separately in runRagFlow.ts and are not part of this flow.
  *
  * Legacy alias `runMcpFlow` is retained for callers that haven't migrated yet.
  */
@@ -42,7 +39,6 @@ import { prepareMessagesWithFiles } from "$lib/server/textGeneration/utils/prepa
 import { makeImageProcessor } from "$lib/server/endpoints/images";
 import { logger } from "$lib/server/logger";
 import { AbortedGenerations } from "$lib/server/abortedGenerations";
-import { GET_FILE_CHUNKS_TOOL, RETRIEVE_DOCS_TOOL } from "$lib/server/rag/ragTools";
 
 export type RunToolFlowContext = Pick<
 	TextGenerationContext,
@@ -54,7 +50,6 @@ export type RunToolFlowContext = Pick<
 	| "provider"
 	| "locals"
 	| "ragFiles"
-	| "ragContext"
 > & { messages: EndpointMessage[] };
 
 /** @deprecated use RunToolFlowContext */
@@ -80,7 +75,6 @@ export async function* runToolFlow({
 	abortController,
 	promptedAt,
 	ragFiles,
-	ragContext,
 }: RunMcpFlowContext & {
 	preprompt?: string;
 	abortSignal?: AbortSignal;
@@ -165,17 +159,9 @@ export async function* runToolFlow({
 		// ignore selection merge errors and proceed with env servers
 	}
 
-	// If selection/merge yielded no servers, bail early — UNLESS local tools (RAG)
-	// are engaged for this request, in which case we still have tools to advertise.
 	if (servers.length === 0) {
-		if (ragContext?.engaged) {
-			console.log(
-				"[RAG] zero MCP servers (post merge/name filter) but ragContext engaged — continuing for local RAG tools"
-			);
-		} else {
-			logger.warn({}, "[mcp] no MCP servers selected after merge/name filter");
-			return "not_applicable";
-		}
+		logger.warn({}, "[mcp] no MCP servers selected after merge/name filter");
+		return "not_applicable";
 	}
 
 	// Enforce server-side safety (public HTTPS only, no private ranges)
@@ -199,14 +185,8 @@ export async function* runToolFlow({
 		} catch {}
 	}
 	if (servers.length === 0) {
-		if (ragContext?.engaged) {
-			console.log(
-				"[RAG] all MCP servers rejected by URL safety, but ragContext engaged — continuing for local RAG tools"
-			);
-		} else {
-			logger.warn({}, "[mcp] all selected MCP servers rejected by URL safety guard");
-			return "not_applicable";
-		}
+		logger.warn({}, "[mcp] all selected MCP servers rejected by URL safety guard");
+		return "not_applicable";
 	}
 
 	// Optionally attach the logged-in user's HF token to the official HF MCP server only.
@@ -273,13 +253,6 @@ export async function* runToolFlow({
 		{ count: servers.length, servers: servers.map((s) => s.name) },
 		"[mcp] servers configured"
 	);
-	if (servers.length === 0 && !ragContext?.engaged) {
-		return "not_applicable";
-	}
-	if (servers.length === 0) {
-		console.log("[RAG] zero MCP servers but ragContext engaged — proceeding to RAG tool advertisement");
-	}
-
 	// Gate MCP flow based on model tool support (aggregated) with user override
 	try {
 		const supportsTools = Boolean((model as unknown as { supportsTools?: boolean }).supportsTools);
@@ -339,17 +312,6 @@ export async function* runToolFlow({
 		const { tools: oaTools, mapping } = await getOpenAiToolsForMcp(servers, {
 			signal: abortSignal,
 		});
-		if (ragContext?.engaged) {
-			oaTools.push(RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL);
-			console.log(
-				`[RAG] tools advertised: retrieve_docs, get_file_chunks (inventory=${ragContext.inventory.length} files)`
-			);
-			logger.info({ tools: ["retrieve_docs", "get_file_chunks"] }, "[mcp] RAG tools advertised");
-		} else {
-			console.log(
-				`[RAG] tools NOT advertised (ragContext.engaged=${Boolean(ragContext?.engaged)})`
-			);
-		}
 		try {
 			logger.info(
 				{ toolCount: oaTools.length, toolNames: oaTools.map((t) => t.function.name) },
@@ -678,7 +640,11 @@ export async function* runToolFlow({
 
 			if (Object.keys(toolCallState).length > 0) {
 				console.log(
-					`[RAG] LLM emitted ${Object.keys(toolCallState).length} tool_call(s) on loop ${loop}: ${Object.values(toolCallState).map((c) => c?.name ?? "?").join(", ")}`
+					`[RAG] LLM emitted ${Object.keys(toolCallState).length} tool_call(s) on loop ${loop}: ${Object.values(
+						toolCallState
+					)
+						.map((c) => c?.name ?? "?")
+						.join(", ")}`
 				);
 				// If any streamed call is missing id, perform a quick non-stream retry to recover full tool_calls with ids
 				const missingId = Object.values(toolCallState).some((c) => c?.name && !c?.id);
@@ -747,7 +713,6 @@ export async function* runToolFlow({
 					abortSignal,
 					locals,
 					ragFiles,
-					ragContext,
 				});
 				let toolMsgCount = 0;
 				let toolRunCount = 0;

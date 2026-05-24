@@ -2,143 +2,137 @@
 
 This document provides a comprehensive overview of the Retrieval-Augmented Generation (RAG) implementation in Chat-UI.
 
-## 🚀 Overview
+## Overview
 
-The RAG system enables the chat interface to contextually retrieve and reference code snippets from a user's codebase (or uploaded files). It integrates a backend FastAPI RAG engine with the SvelteKit-based Chat-UI frontend.
+The RAG system enables the chat interface to retrieve and reference content from user-uploaded files during conversation. It connects a backend FastAPI RAG engine to the SvelteKit frontend via an agentic tool-calling loop.
 
----
-
-## 📅 Implementation Roadmap
-
-### ✅ Completed Phases
-
-#### Phase 1: Basic RAG Injection (MVP)
-
-**Goal:** Establish connectivity and basic context injection.
-
-- **Key Changes:**
-  - Created `src/lib/server/rag/client.ts`: The core API client for the RAG backend.
-  - Created `src/lib/server/rag/contextBuilder.ts`: Formats retrieved chunks into LLM-readable system messages.
-  - Integration: Modified `src/routes/conversation/[id]/+server.ts` to perform semantic searches during the chat flow.
-- **Verification:** Successfully injected code snippets into LLM prompts using XML-like `<coderef>` tags.
-
-#### Phase 2: Query Rewriting (Enhanced)
-
-**Goal:** Improve retrieval by rewriting user queries based on conversation history.
-
-- **Key Changes:**
-  - Created `src/lib/server/rag/queryRewriter.ts`: Uses the LLM to convert vague follow-up questions (e.g., "how does it work?") into standalone searchable queries.
-- **Verification:** Improved accuracy for multi-turn conversations where context is required to stay relevant.
-
-#### Phase 3: File Upload & Management
-
-**Goal:** Enable users to manage their RAG context directly from the UI.
-
-- **Key Changes:**
-  - **Single Point of Truth:** Refactored RAG Client to a shared location (`src/lib/rag/client.ts`) for browser compatibility.
-  - **SvelteKit Proxy:** Implemented server-side proxies to handle CORS and secure `X-User-ID` injection.
-  - **Dynamic UI:** Refactored `RagFileManager.svelte` to use the proxy and implemented automatic polling for file processing status.
-- **Architecture Note:** Solved CORS restrictions by routing browser requests through SvelteKit before reaching the RAG backend.
-
-#### Phase 4: RAG Chunk UI (Visual Enhancements)
-
-**Goal:** Make the "hidden" RAG context visible and interactive for users.
-
-- **Key Changes:**
-  - **Metadata Enrichment:** Updated `contextBuilder.ts` to attach full chunk objects to message metadata.
-  - **Decoupled Rendering:** Created `MessageRenderer.svelte` and `RagReferenceCard.svelte` to separate UI routing from streaming.
-  - **Type Safety:** Created `src/lib/rag/context.ts` to share types across client and server.
-- **Verification:** RAG contexts are now displayed as interactive cards above the AI response.
+**Current architecture (v4.0):** A dedicated `runRagFlow.ts` owns all RAG tool calls, completely decoupled from MCP infrastructure. The LLM autonomously decides when and how to retrieve — choosing between semantic search, sequential file read, or file listing based on tool descriptions.
 
 ---
 
-#### Phase 5: File-Aware Rewriting & Context Optimization
+## Implementation Phases
 
-**Goal:** Improve retrieval precision by making the query rewriter aware of the entire codebase file structure.
+### ✅ Phase 1: Basic RAG Injection (MVP)
 
-- **Key Changes:**
-  - **Frontend Caching:** The RAG file list is fetched once on page load and cached on the frontend to avoid redundant API calls.
-  - **Payload Enrichment:** The cached `availableFiles` list is passed to the backend with every message.
-  - **File-Aware Rewriting:** Updated `queryRewriter.ts` to include the available file list in the LLM prompt, enabling resolution of references like "explain this file".
-  - **Visual Status Indicators:** Enhanced `UploadedFile.svelte` with "RAG Ready" and "Indexing..." badges based on real-time indexing status.
-- **Verification:** Reduced query rewriter latency and improved handling of file-specific queries.
+**Goal:** Establish connectivity and inject retrieved context into LLM prompts.
 
----
+- Created `src/lib/server/rag/client.ts` — core API client for the RAG backend
+- Created `src/lib/server/rag/contextBuilder.ts` — formats retrieved chunks into `<coderef>` XML
+- Modified `src/routes/conversation/[id]/+server.ts` to perform semantic search during chat flow
 
-#### Phase 6: JWT Authentication Implementation (Security Enhancement)
+### ✅ Phase 2: Query Rewriting
 
-**Goal:** Replace tenant ID headers with secure JWT Bearer token authentication for improved security and proper session management.
+**Goal:** Improve retrieval for multi-turn conversations where queries reference prior context.
+
+- Created `src/lib/server/rag/queryRewriter.ts` — LLM-based query transformation for follow-up questions
+
+### ✅ Phase 3: File Upload & Management
+
+**Goal:** User-facing file management with secure auth.
+
+- Centralized RAG client to `src/lib/rag/client.ts` for browser compatibility
+- SvelteKit proxy routes to handle CORS and secure JWT injection
+- `RagFileManager.svelte` with real-time polling for processing status
+
+### ✅ Phase 4: RAG Chunk UI
+
+**Goal:** Make retrieved context visible as interactive citations.
+
+- `MessageRenderer.svelte` — UI routing layer separating streaming from rendering
+- `RagReferenceCard.svelte` — interactive citation cards above AI responses
+- `src/lib/rag/context.ts` — shared types across client and server
+
+### ✅ Phase 5: File-Aware Query Rewriting
+
+**Goal:** Query rewriter understands the full file inventory.
+
+- File list cached on frontend, passed with every message
+- `queryRewriter.ts` updated to resolve references like "explain this file"
+
+### ✅ Phase 6: JWT Authentication
+
+**Goal:** Secure per-user authentication for all RAG operations.
 
 **Date:** March 2, 2026
 
-**Key Changes:**
+- Google SSO → Google ID Token → RAG JWT → server-side session storage
+- All proxy routes use `Authorization: Bearer <jwt>` headers
+- JWT tokens never exposed to client
 
-- **JWT Authentication Flow:** Integrated RAG JWT authentication with Google SSO login process
-- **Session Storage:** Store RAG JWT tokens server-side in user sessions (never exposed to client)
-- **Token Type Fix:** Switched from Google access tokens to Google ID tokens for RAG backend authentication
-- **Fallback Mechanism:** Added automatic JWT authentication for existing sessions without requiring logout
-- **Proxy Route Updates:** Updated all RAG proxy routes to use JWT Bearer tokens instead of `X-User-ID` headers
-- **Error Handling:** RAG authentication failures are logged but don't break the login process
+**Files:** `src/lib/types/Session.ts`, `src/lib/server/rag/auth.ts`, `src/routes/login/callback/updateUser.ts`, `src/routes/api/v1/rag/*`
 
-**Architecture Changes:**
+### ✅ Phase 7: Agentic RAG — Decoupled `runRagFlow`
 
-- **Frontend:** `browserRagClient` uses `/api/v1/rag` proxy routes exclusively
-- **Backend:** Proxy routes call RAG backend directly with JWT `Authorization: Bearer <token>` headers
-- **Authentication:** Google ID token → RAG JWT → Secure session storage
-- **Security:** JWT tokens stored server-side only, automatic refresh ready
+**Goal:** Replace fragile RAG-in-MCP wiring with a clean, independent tool-calling loop.
 
-**Files Modified:**
+**Date:** May 24, 2026
 
-- `src/lib/types/Session.ts` - Added `ragToken`, `ragRefreshToken`, `ragTokenExpiresAt`, `oauth.idToken`
-- `src/lib/server/rag/auth.ts` - Created JWT authentication utilities
-- `src/lib/rag/browserClient.ts` - Fixed baseUrl configuration
-- `src/routes/login/callback/updateUser.ts` - Integrated RAG auth with Google SSO
-- `src/routes/api/v1/rag/*/ +server.ts` - Updated all proxy routes for JWT authentication
-- `src/lib/server/auth.ts` - Added ID token storage
+**Root bug fixed:** `ragContext` was not forwarded to `runToolFlow()`, so RAG tools were never advertised to the LLM — causing identical responses on every turn ("stuck at same").
 
-**Verification:**
+**Key changes:**
 
-- ✅ Google SSO login automatically authenticates with RAG backend
-- ✅ Existing sessions get fallback JWT authentication
-- ✅ All RAG operations (list, upload, delete, search) work with JWT
-- ✅ RAG authentication failures don't break login flow
-- ✅ JWT tokens are securely stored server-side only
-
-#### Phase 7: Agentic RAG Orchestrator (Current)
-
-**Goal:** Transition from rule-based routing to an intelligent agent-based planning system.
-
-- **Key Changes:**
-  - **RagAgent Orchestrator**: A pure, dependency-injected class (`src/lib/server/rag/ragAgent.ts`) that coordinates planning and execution.
-  - **LLM-Based Planner**: Created `RagPlanner.ts` which uses the local `TASK_MODEL` to decide retrieval strategy.
-  - **Robust Fallback**: Implemented a 2-second timeout on LLM planning with an instant fallback to `ragAgentLegacy.ts` (deterministic regex logic).
-  - **Zero-Latency Context**: Created `historyCompressor.ts` to summarize conversation context without additional LLM calls.
-  - **Strategy-Aware Budget**: Updated `contextBuilder.ts` to dynamically adjust context size (4k vs 8k) based on chosen strategy.
-- **Verification:** Improved handling of complex, multi-file relational queries and provided graceful degradation for 401/timeout scenarios.
+- **Created `src/lib/server/textGeneration/mcp/runRagFlow.ts`** — self-contained OpenAI tool-calling loop (max 10 iterations) that advertises only `list_files`, `retrieve_docs`, and `get_file_chunks`. No MCP server discovery, no URL safety checks, no HF token forwarding.
+- **Updated `src/lib/server/textGeneration/index.ts`** — orchestration: try RAG first (when `ragContext.engaged`) → try MCP → plain generation fallback.
+- **Stripped RAG from `runMcpFlow.ts`** — removed all `ragContext` references, RAG tool advertisement, and bypass paths from zero-server checks.
+- **Stripped RAG from `toolInvocation.ts`** — removed RAG dispatch block (~185 lines), 6 RAG-specific imports, `ragContext` from the interface.
+- **Added `list_files` tool** — instant inventory read (no backend call) for ambiguous queries.
+- **Critic loop** on `retrieve_docs`: `ragCritic.evaluate()` → PASS/RETRY/EMPTY → `reformulateQuery()` with 1500ms timeout → merge by highest similarity per chunk id.
+- **Fixed 100% similarity display** — sequential read chunks (`get_file_chunks`) now have `similarity: null` so the UI hides the relevance bar.
+- **Fixed multi-turn re-retrieval** — system prompt explicitly instructs the LLM not to re-fetch files whose content is already in conversation history.
+- **Fixed tool routing** — `get_file_chunks` is now the required tool for exhaustive tasks ("list all functions", "what does this file contain"); `retrieve_docs` is explicitly marked as NOT for exhaustive tasks.
 
 ---
 
-### ⏳ Upcoming Phases
+## Current Architecture
 
-#### Phase 7: Advanced Features (Optional)
+### Text Generation Flow
 
-**Goal:** Deepen the integration with more specialized codebase analysis tools.
+```
+POST /conversation/[id]
+  │
+  ├─ 1. Gate: ragGate.shouldEngage(userQuery, files)
+  │     SKIPPED → textGeneration skips runRagFlow
+  │     ENGAGED → ragContext built with inventory + ragClient
+  │
+  └─ 2. textGeneration(ctx)
+        │
+        ├─ A. runRagFlow()  ← when ragContext.engaged
+        │     ├─ Advertise: [list_files, retrieve_docs, get_file_chunks]
+        │     ├─ Tool loop (≤10 iterations)
+        │     │     LLM calls tool → dispatch → append → loop
+        │     │     No tool call → FinalAnswer → "completed"
+        │     └─ "not_applicable" if model has no tool support
+        │
+        ├─ B. runToolFlow() ← pure MCP (no RAG tools)
+        │
+        └─ C. generate()   ← plain generation fallback
+```
 
-- **Code Graph Visualization:** Visualize relationships between files and classes based on RAG embeddings.
-- **Test Discovery:** Automatically identify relevant unit tests for the current context.
+### RAG Tools
 
-#### Phase 7: Performance & Scalability
+| Tool              | Use case                                            | Backend                                        |
+| ----------------- | --------------------------------------------------- | ---------------------------------------------- |
+| `list_files`      | Discover available files for ambiguous queries      | None (in-memory inventory)                     |
+| `retrieve_docs`   | Semantic search, targeted questions                 | `POST /api/v1/rag/chunk/semanticSearchForChat` |
+| `get_file_chunks` | Summaries, exhaustive analysis, listing all symbols | `GET /api/v1/rag/file/{fileId}/chunks`         |
 
-**Goal:** Optimize for larger codebases and more concurrent users.
+### Critic Loop (retrieve_docs)
 
-- **Streaming Retrieval:** Begin rendering citations _while_ the backend is still fetching subsequent chunks.
-- **Per-User Vector Collections:** Isolate tenant data at the database level for better security and performance.
+```
+retrieve_docs result
+  │
+  └─ ragCritic.evaluate(chunks)
+        PASS  → use chunks
+        EMPTY → return empty result
+        RETRY → reformulateQuery() [1500ms timeout]
+                  → retry retrieve_docs
+                  → mergeChunksById (highest similarity wins)
+                  → criticRetriesUsed++ (cap: 2/turn)
+```
 
 ---
 
-## 📄 Supported Text Extensions
-
-The RAG system supports indexing for standard text formats and common developer files:
+## Supported File Types
 
 - **Code:** `.js`, `.ts`, `.py`, `.go`, `.rs`, `.c`, `.cpp`, `.h`, `.java`, `.prisma`, `.graphql`
 - **Data/Config:** `.json`, `.xml`, `.csv`, `.yml`, `.yaml`, `.toml`
@@ -146,121 +140,33 @@ The RAG system supports indexing for standard text formats and common developer 
 
 ---
 
-## ✅ RAG Features Verification (March 2, 2026)
+## File Reference
 
-### Core RAG Operations
-
-- ✅ **File Listing:** Users can view their uploaded RAG files via RagFileManager
-- ✅ **File Upload:** Files can be uploaded through the UI with automatic processing
-- ✅ **File Deletion:** Users can delete their RAG files through the interface
-- ✅ **Semantic Search:** Context retrieval works for chat conversations
-- ✅ **File Chunks:** Individual file chunks can be retrieved and displayed
-
-### Authentication & Security
-
-- ✅ **JWT Authentication:** All RAG requests use secure JWT Bearer tokens
-- ✅ **Google SSO Integration:** Automatic RAG authentication during login
-- ✅ **Session Security:** JWT tokens stored server-side only
-- ✅ **Fallback Authentication:** Existing sessions automatically get JWT tokens
-- ✅ **Error Handling:** RAG failures don't break login flow
-
-### User Interface
-
-- ✅ **RagFileManager:** Complete file management interface
-- ✅ **RagReferenceCard:** Interactive citation display in chat
-- ✅ **MessageRenderer:** Proper routing of RAG-enhanced messages
-- ✅ **Status Indicators:** Real-time file processing status
-- ✅ **File-Aware Queries:** Query rewriter understands file references
-
-### Backend Integration
-
-- ✅ **SvelteKit Proxies:** All RAG operations go through secure proxy routes
-- ✅ **Tenant Isolation:** Users only access their own files
-- ✅ **Query Rewriting:** Multi-turn conversation context enhancement
-- ✅ **Context Building:** Proper formatting of RAG chunks for LLM
-- ✅ **Error Recovery:** Graceful handling of backend failures
-
-### Performance & Reliability
-
-- ✅ **Frontend Caching:** File lists cached to reduce API calls
-- ✅ **Automatic Polling:** File processing status updates
-- ✅ **Concurrent Safety:** Multiple simultaneous operations supported
-- ✅ **Session Persistence:** JWT tokens survive page refreshes
-
----
-
-## 🔮 Future Roadmap
-
-Beyond the current phases, we plan to implement:
-
-- **Git Context Integration**: Automatically pull context from the current branch or recent commits.
-- **Multi-Backend Support**: Toggle between vector providers (e.g., Pinecone, Weaviate, PgVector) via environment variables.
-- **Interactive Citations**: Click a citation to jump directly to the relevant file in a built-in code viewer.
-
----
-
-## 🏗 Key Architectural Decisions
-
-### 1. JWT-Based Authentication (Updated)
-
-**Previous:** Every request to the RAG backend included an `X-User-ID` header for tenant isolation.
-
-**Current:** All RAG requests use JWT Bearer token authentication for enhanced security:
-
-- **Frontend:** Uses `browserRagClient` with `/api/v1/rag` proxy routes
-- **Proxy Routes:** Authenticate users, retrieve JWT from session, call RAG backend with `Authorization: Bearer <jwt>`
-- **Session Storage:** JWT tokens stored server-side only, never exposed to client
-- **Authentication Flow:** Google SSO → Google ID Token → RAG JWT → Session Storage
-- **Fallback:** Automatic JWT authentication for existing sessions
-
-### 2. Browser-Secure Requests
-
-The browser uses a `browserRagClient` with relative paths (`/api/v1/rag/...`). This ensures all traffic is handled by SvelteKit proxies, which securely append JWT authentication headers and route to the RAG backend.
-
-### 3. Pure UI Routing (`MessageRenderer`)
-
-By moving rendering logic out of `ChatMessage.svelte`, we preserved the complex streaming/scroll logic in one place while allowing the rendering layer to scale as more message types (e.g., MCP tools) are added.
-
-### 4. SvelteKit Proxy Architecture
-
-All RAG operations go through SvelteKit proxy routes for security:
-
-- **Authentication:** Block anonymous access, require authenticated user
-- **Token Management:** Retrieve JWT from session, handle fallback authentication
-- **Error Handling:** Graceful handling of RAG backend failures
-- **Security:** Never expose RAG backend URLs or tokens to client
-
-### 5. Agentic Orchestration & Fallback Planning
-
-The RAG system now uses a two-tier planning architecture:
-
-- **Tier 1 (LLM Planner):** Tries to use the local Ollama model to reason about complex multi-file queries.
-- **Tier 2 (Regex Fallback):** If Tier 1 fails, times out (2s), or returns invalid JSON, the system instantly reverts to a legacy deterministic planner.
-- **Hard Limits:** All plans are subject to code-enforced limits (max 3 `DEEP_DIVE` files, 5 files total) to prevent latency/memory spikes.
-
----
-
-## 📂 File Reference
-
-| File Path                                                      | Description                          | Phase   |
-| -------------------------------------------------------------- | ------------------------------------ | ------- |
-| `src/lib/rag/client.ts`                                        | Centralized API client               | 3       |
-| `src/lib/rag/browserClient.ts`                                 | Browser-safe proxy client            | 3       |
-| `src/lib/rag/context.ts`                                       | Shared RAG types                     | 4       |
-| `src/lib/server/rag/ragAgent.ts`                               | Main Orchestrator (Plan + Execute)   | 7       |
-| `src/lib/server/rag/ragPlanner.ts`                             | LLM-based Strategy Planner           | 7       |
-| `src/lib/server/rag/ragAgentLegacy.ts`                         | Deterministic Regex Fallback Planner | 7       |
-| `src/lib/server/rag/historyCompressor.ts`                      | Zero-latency Context Compressor      | 7       |
-| `src/lib/server/rag/contextBuilder.ts`                         | Prompt formatter (4k/8k scaling)     | 1, 4, 7 |
-| `src/lib/server/rag/queryRewriter.ts`                          | Query transformation logic           | 2       |
-| `src/lib/server/rag/auth.ts`                                   | JWT authentication utilities         | 6       |
-| `src/lib/components/chat/MessageRenderer.svelte`               | UI Routing layer                     | 4       |
-| `src/lib/components/chat/RagReferenceCard.svelte`              | Citation UI Card                     | 4       |
-| `src/routes/api/v1/rag/files/+server.ts`                       | File listing proxy (JWT auth)        | 3, 6    |
-| `src/routes/api/v1/rag/file/upload/+server.ts`                 | File upload proxy (JWT auth)         | 3, 6    |
-| `src/routes/api/v1/rag/file/[id]/+server.ts`                   | File deletion proxy (JWT auth)       | 3, 6    |
-| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Semantic search proxy (JWT auth)     | 3, 6    |
-| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts`            | File chunks proxy (JWT auth)         | 3, 6    |
-| `src/routes/conversation/[id]/+server.ts`                      | Core Chat-RAG integration            | 1, 7    |
-| `src/routes/login/callback/updateUser.ts`                      | Google SSO + RAG JWT integration     | 6       |
-| `src/lib/types/Session.ts`                                     | Session interface with JWT fields    | 6       |
+| File                                                           | Description                                       | Phase   |
+| -------------------------------------------------------------- | ------------------------------------------------- | ------- |
+| `src/lib/server/textGeneration/mcp/runRagFlow.ts`              | **RAG tool-calling loop** — owns all RAG dispatch | 7       |
+| `src/lib/server/textGeneration/index.ts`                       | Orchestration: RAG → MCP → plain gen              | 7       |
+| `src/lib/server/textGeneration/mcp/runMcpFlow.ts`              | Pure MCP flow (no RAG)                            | 7       |
+| `src/lib/server/textGeneration/mcp/toolInvocation.ts`          | MCP tool execution (no RAG)                       | 7       |
+| `src/lib/server/rag/ragTools.ts`                               | Tool definitions + handlers                       | 7       |
+| `src/lib/server/rag/ragCritic.ts`                              | Quality evaluation + query reformulation          | 7       |
+| `src/lib/server/rag/ragGate.ts`                                | `shouldEngage()` — turn-level RAG gate            | 7       |
+| `src/lib/server/rag/ragRouter.ts`                              | File-name matching for the gate                   | 7       |
+| `src/lib/server/rag/contextBuilder.ts`                         | Formats chunks into `<coderef>` XML               | 1, 4, 7 |
+| `src/lib/server/rag/inventoryInjector.ts`                      | Injects file inventory into system prompt         | 7       |
+| `src/lib/server/rag/historyHygiene.ts`                         | Strips noise from conversation history            | 7       |
+| `src/lib/server/rag/client.ts`                                 | Server-side `RAGClient` with JWT auth             | 3, 6    |
+| `src/lib/rag/client.ts`                                        | Shared types + browser-safe proxy client          | 3       |
+| `src/lib/server/textGeneration/utils/toolPrompt.ts`            | System prompt with tool routing rules             | 7       |
+| `src/lib/server/rag/auth.ts`                                   | JWT authentication utilities                      | 6       |
+| `src/lib/components/chat/RagReferenceCard.svelte`              | Citation UI card                                  | 4       |
+| `src/lib/components/chat/MessageRenderer.svelte`               | UI routing layer                                  | 4       |
+| `src/lib/components/chat/RagFileManager.svelte`                | File management UI                                | 3       |
+| `src/routes/api/v1/rag/files/+server.ts`                       | File listing proxy (JWT auth)                     | 3, 6    |
+| `src/routes/api/v1/rag/file/upload/+server.ts`                 | File upload proxy (JWT auth)                      | 3, 6    |
+| `src/routes/api/v1/rag/file/[id]/+server.ts`                   | File deletion proxy (JWT auth)                    | 3, 6    |
+| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Semantic search proxy (JWT auth)                  | 3, 6    |
+| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts`            | File chunks proxy (JWT auth)                      | 3, 6    |
+| `src/routes/conversation/[id]/+server.ts`                      | Core chat-RAG integration                         | 1, 7    |
+| `src/routes/login/callback/updateUser.ts`                      | Google SSO + RAG JWT integration                  | 6       |
+| `src/lib/types/Session.ts`                                     | Session interface with JWT fields                 | 6       |

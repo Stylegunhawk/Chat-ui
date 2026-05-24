@@ -16,7 +16,7 @@ export const RETRIEVE_DOCS_TOOL: OpenAiTool = {
 	function: {
 		name: "retrieve_docs",
 		description:
-			"Search uploaded files for content relevant to a query. Use fileIds when the user names specific files.",
+			"Semantic search — finds the most relevant chunks across uploaded files for a query. Use when the user asks a question whose answer lives in a specific part of a file. Do NOT use for exhaustive tasks like listing all functions, symbols, or imports — use get_file_chunks instead.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -51,7 +51,7 @@ export const GET_FILE_CHUNKS_TOOL: OpenAiTool = {
 	function: {
 		name: "get_file_chunks",
 		description:
-			"Read a specific uploaded file sequentially in chunk order. Best for summaries and full-file walkthroughs.",
+			"Read a specific uploaded file sequentially in chunk order. Use for: summaries, full-file walkthroughs, listing all functions/classes/imports/symbols, finding all usages of something, or any task requiring complete file coverage. Always prefer this over retrieve_docs when the user asks to 'list all X' or 'what does this file contain'.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -76,7 +76,80 @@ export const GET_FILE_CHUNKS_TOOL: OpenAiTool = {
 	},
 };
 
-export const RAG_TOOL_NAMES = new Set(["retrieve_docs", "get_file_chunks"]);
+export const LIST_FILES_TOOL: OpenAiTool = {
+	type: "function",
+	function: {
+		name: "list_files",
+		description:
+			"List all uploaded files with their IDs, names, and readiness status. Call this first when the user's query is ambiguous or refers to 'my files' without naming one, so you can discover what's available before deciding whether to use retrieve_docs (semantic search) or get_file_chunks (full read).",
+		parameters: {
+			type: "object",
+			properties: {},
+			required: [],
+		},
+	},
+};
+
+export const GET_CODE_GRAPH_RELATED_TOOL: OpenAiTool = {
+	type: "function",
+	function: {
+		name: "get_code_graph_related",
+		description:
+			"Find code entities related to a given class or function via the dependency graph. " +
+			"Use when you need to understand what a class depends on, what calls it, or what it imports. " +
+			"Returns names, files, and optionally code snippets of related entities. " +
+			"Use include_snippets=true only when you need the actual code of related entities.",
+		parameters: {
+			type: "object",
+			properties: {
+				entity: {
+					type: "string",
+					description:
+						"Class or function name (e.g. 'CacheStore') or fully-qualified ID (tenant::file::name).",
+				},
+				depth: {
+					type: "integer",
+					minimum: 1,
+					maximum: 3,
+					default: 2,
+					description: "BFS traversal depth (1–3).",
+				},
+				max: {
+					type: "integer",
+					minimum: 1,
+					maximum: 20,
+					default: 10,
+					description: "Maximum number of related entities to return.",
+				},
+				include_snippets: {
+					type: "boolean",
+					default: false,
+					description: "Attach a 200-char code snippet to each related entity.",
+				},
+			},
+			required: ["entity"],
+		},
+	},
+};
+
+export const RAG_TOOL_NAMES = new Set([
+	"retrieve_docs",
+	"get_file_chunks",
+	"list_files",
+	"get_code_graph_related",
+]);
+
+export interface CodeGraphRelatedArgs {
+	entity: string;
+	depth?: number;
+	max?: number;
+	include_snippets?: boolean;
+}
+
+export interface CodeGraphRelatedResult {
+	data?: unknown;
+	error?: string;
+}
 
 export interface RetrieveDocsArgs {
 	query: string;
@@ -227,5 +300,27 @@ export const handleGetFileChunks: GetFileChunksHandler = async (args, ctx) => {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Failed to fetch file chunks";
 		return { chunks: [], error: message };
+	}
+};
+
+export const handleGetCodeGraphRelated = async (
+	args: CodeGraphRelatedArgs,
+	ctx: { ragClient: RAGClient }
+): Promise<CodeGraphRelatedResult> => {
+	const { entity, depth = 2, max = 10, include_snippets = false } = args;
+	const clampedDepth = Math.min(Math.max(depth, 1), 3);
+	const clampedMax = Math.min(Math.max(max, 1), 20);
+
+	try {
+		const data = await ctx.ragClient.getGraphRelated(
+			entity,
+			clampedDepth,
+			clampedMax,
+			include_snippets
+		);
+		return { data };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Graph related query failed";
+		return { error: message };
 	}
 };

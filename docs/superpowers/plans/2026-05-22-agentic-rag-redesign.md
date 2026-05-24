@@ -18,34 +18,34 @@
 
 ### New files (all under `src/lib/server/rag/`)
 
-| File | Responsibility | Lines (est.) |
-|---|---|---|
-| `historyHygiene.ts` | Pure: strip `<rag_result>` / `# Retrieved Document Context` / `## Uploaded Files` blocks from prior user messages | ~50 |
-| `historyHygiene.spec.ts` | Unit tests for above | ~80 |
-| `inventoryInjector.ts` | Pure: build `## Uploaded Files` system-prompt block from `RagFileMetadata[]` | ~40 |
-| `inventoryInjector.spec.ts` | Unit tests | ~50 |
-| `ragGate.ts` | Pure: `shouldEngage(query, files, history) → boolean` | ~60 |
-| `ragGate.spec.ts` | Unit tests | ~90 |
-| `ragCritic.ts` | `evaluate(chunks)` (pure) + `reformulateQuery(...)` (LLM-backed) | ~120 |
-| `ragCritic.spec.ts` | Unit tests | ~100 |
-| `ragTools.ts` | OpenAI tool schemas + handlers wrapping `RAGClient` | ~180 |
-| `ragTools.spec.ts` | Unit tests with mocked `RAGClient` | ~120 |
+| File                        | Responsibility                                                                                                    | Lines (est.) |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------ |
+| `historyHygiene.ts`         | Pure: strip `<rag_result>` / `# Retrieved Document Context` / `## Uploaded Files` blocks from prior user messages | ~50          |
+| `historyHygiene.spec.ts`    | Unit tests for above                                                                                              | ~80          |
+| `inventoryInjector.ts`      | Pure: build `## Uploaded Files` system-prompt block from `RagFileMetadata[]`                                      | ~40          |
+| `inventoryInjector.spec.ts` | Unit tests                                                                                                        | ~50          |
+| `ragGate.ts`                | Pure: `shouldEngage(query, files, history) → boolean`                                                             | ~60          |
+| `ragGate.spec.ts`           | Unit tests                                                                                                        | ~90          |
+| `ragCritic.ts`              | `evaluate(chunks)` (pure) + `reformulateQuery(...)` (LLM-backed)                                                  | ~120         |
+| `ragCritic.spec.ts`         | Unit tests                                                                                                        | ~100         |
+| `ragTools.ts`               | OpenAI tool schemas + handlers wrapping `RAGClient`                                                               | ~180         |
+| `ragTools.spec.ts`          | Unit tests with mocked `RAGClient`                                                                                | ~120         |
 
 ### Modified files
 
-| File | Lines touched | What changes |
-|---|---|---|
-| `src/routes/conversation/[id]/+server.ts` | 320-410 | Replace RAG block: strip → toggle check → gate → inventory → tool loop |
-| `src/lib/server/textGeneration/mcp/runMcpFlow.ts` | Tool list assembly + tool-result hook | Append RAG tools when gate engaged; intercept `retrieve_docs` results through critic |
-| `src/lib/server/textGeneration/utils/toolPrompt.ts` | 37-39, 16-18 | Replace `retrieve_docs` block; drop `rerank_docs` mention |
-| `src/lib/server/rag/contextBuilder.ts` | 36-42, 81-84 | Drop `RagStrategy` dependency from `getContextBudget`; keep `buildRagContextMessage` for tool result formatting |
+| File                                                | Lines touched                         | What changes                                                                                                    |
+| --------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `src/routes/conversation/[id]/+server.ts`           | 320-410                               | Replace RAG block: strip → toggle check → gate → inventory → tool loop                                          |
+| `src/lib/server/textGeneration/mcp/runMcpFlow.ts`   | Tool list assembly + tool-result hook | Append RAG tools when gate engaged; intercept `retrieve_docs` results through critic                            |
+| `src/lib/server/textGeneration/utils/toolPrompt.ts` | 37-39, 16-18                          | Replace `retrieve_docs` block; drop `rerank_docs` mention                                                       |
+| `src/lib/server/rag/contextBuilder.ts`              | 36-42, 81-84                          | Drop `RagStrategy` dependency from `getContextBudget`; keep `buildRagContextMessage` for tool result formatting |
 
 ### Deleted files (final cleanup task only)
 
-| File | Lines |
-|---|---|
-| `src/lib/server/rag/ragAgent.ts` | 248 |
-| `src/lib/server/rag/ragAgent.spec.ts` | 128 |
+| File                                      | Lines                                 |
+| ----------------------------------------- | ------------------------------------- |
+| `src/lib/server/rag/ragAgent.ts`          | 248                                   |
+| `src/lib/server/rag/ragAgent.spec.ts`     | 128                                   |
 | `src/lib/server/rag/historyCompressor.ts` | 128 (verify no other consumers first) |
 
 ### Untouched
@@ -73,6 +73,7 @@
 ## Task 1: `historyHygiene.ts` — strip stale RAG blocks from history
 
 **Files:**
+
 - Create: `src/lib/server/rag/historyHygiene.ts`
 - Create: `src/lib/server/rag/historyHygiene.spec.ts`
 
@@ -109,10 +110,7 @@ describe("stripPriorRagBlocks", () => {
 
 	it("removes <rag_result> tags from prior user messages", () => {
 		const messages: Message[] = [
-			msg(
-				"user",
-				`<rag_result query="x"><coderef>data</coderef></rag_result>previous question`
-			),
+			msg("user", `<rag_result query="x"><coderef>data</coderef></rag_result>previous question`),
 			msg("user", "current question"),
 		];
 
@@ -140,10 +138,7 @@ describe("stripPriorRagBlocks", () => {
 	it("NEVER strips the last message", () => {
 		const messages: Message[] = [
 			msg("user", "earlier"),
-			msg(
-				"user",
-				`# Retrieved Document Context\n<coderef>x</coderef>\n---\n\ncurrent query`
-			),
+			msg("user", `# Retrieved Document Context\n<coderef>x</coderef>\n---\n\ncurrent query`),
 		];
 
 		const result = stripPriorRagBlocks(messages);
@@ -160,17 +155,12 @@ describe("stripPriorRagBlocks", () => {
 
 		const result = stripPriorRagBlocks(messages);
 
-		expect(result[0].content).toBe(
-			"# Retrieved Document Context\nsome text\n---\n\nresponse"
-		);
+		expect(result[0].content).toBe("# Retrieved Document Context\nsome text\n---\n\nresponse");
 	});
 
 	it("is idempotent (running twice produces the same result)", () => {
 		const messages: Message[] = [
-			msg(
-				"user",
-				`<rag_result>x</rag_result># Retrieved Document Context\nfoo\n---\n\nquery`
-			),
+			msg("user", `<rag_result>x</rag_result># Retrieved Document Context\nfoo\n---\n\nquery`),
 			msg("user", "current"),
 		];
 
@@ -181,10 +171,7 @@ describe("stripPriorRagBlocks", () => {
 	});
 
 	it("returns the same array reference for messages that don't change", () => {
-		const messages: Message[] = [
-			msg("user", "no rag here"),
-			msg("user", "current"),
-		];
+		const messages: Message[] = [msg("user", "no rag here"), msg("user", "current")];
 
 		const result = stripPriorRagBlocks(messages);
 
@@ -279,6 +266,7 @@ git commit -m "feat(rag): add historyHygiene for stripping stale RAG blocks"
 ## Task 2: `inventoryInjector.ts` — build the `## Uploaded Files` block
 
 **Files:**
+
 - Create: `src/lib/server/rag/inventoryInjector.ts`
 - Create: `src/lib/server/rag/inventoryInjector.spec.ts`
 
@@ -353,12 +341,10 @@ describe("buildInventoryBlock", () => {
 	});
 
 	it("renders file count correctly", () => {
-		expect(
-			buildInventoryBlock([file({ id: "f1" })])
-		).toContain("1 uploaded file(s)");
-		expect(
-			buildInventoryBlock([file({ id: "f1" }), file({ id: "f2" })])
-		).toContain("2 uploaded file(s)");
+		expect(buildInventoryBlock([file({ id: "f1" })])).toContain("1 uploaded file(s)");
+		expect(buildInventoryBlock([file({ id: "f1" }), file({ id: "f2" })])).toContain(
+			"2 uploaded file(s)"
+		);
 	});
 });
 ```
@@ -389,9 +375,7 @@ import type { RagFileMetadata } from "$lib/rag/client";
 
 function formatLine(file: RagFileMetadata): string {
 	const chunkLabel = `${file.chunkCount} chunk${file.chunkCount !== 1 ? "s" : ""}`;
-	const processingNote = !file.finishEmbedding
-		? " — *(processing — not searchable yet)*"
-		: "";
+	const processingNote = !file.finishEmbedding ? " — *(processing — not searchable yet)*" : "";
 	const idPart = `id=\`${file.id}\``;
 	const urlPart = file.url ? `\n  File URL: ${file.url}` : "";
 
@@ -437,6 +421,7 @@ git commit -m "feat(rag): add inventoryInjector for system-prompt file inventory
 ## Task 3: `ragGate.ts` — binary "engage RAG?" decision
 
 **Files:**
+
 - Create: `src/lib/server/rag/ragGate.ts`
 - Create: `src/lib/server/rag/ragGate.spec.ts`
 
@@ -470,9 +455,9 @@ describe("ragGate.shouldEngage", () => {
 
 	it("returns true when query names an uploaded file", () => {
 		expect(shouldEngage("show me auth.py", files(["auth.py"]))).toBe(true);
-		expect(
-			shouldEngage("what's in the authentication file", files(["authentication.py"]))
-		).toBe(true);
+		expect(shouldEngage("what's in the authentication file", files(["authentication.py"]))).toBe(
+			true
+		);
 	});
 
 	it("returns true for content-verb queries with files present", () => {
@@ -629,6 +614,7 @@ git commit -m "feat(rag): add binary engagement gate (replaces 4-bucket regex cl
 ## Task 4: `ragCritic.evaluate` — deterministic retrieval-quality verdict
 
 **Files:**
+
 - Create: `src/lib/server/rag/ragCritic.ts` (evaluate function only — reformulator in Task 7)
 - Create: `src/lib/server/rag/ragCritic.spec.ts`
 
@@ -716,9 +702,7 @@ describe("ragCritic.evaluate", () => {
 	});
 
 	it("handles null/missing similarity gracefully", () => {
-		const result = evaluate([
-			chunk({ similarity: null as unknown as number, role: "entry" }),
-		]);
+		const result = evaluate([chunk({ similarity: null as unknown as number, role: "entry" })]);
 		expect(result.signals.maxSimilarity).toBe(0);
 		expect(result.verdict).toBe("RETRY");
 	});
@@ -778,13 +762,9 @@ export function evaluate(chunks: ChatFileChunk[]): CriticVerdict {
 	}
 
 	const directHits = chunks.filter((c) => !c.is_graph_expansion);
-	const maxSimilarity = directHits.reduce(
-		(acc, c) => Math.max(acc, c.similarity ?? 0),
-		0
-	);
+	const maxSimilarity = directHits.reduce((acc, c) => Math.max(acc, c.similarity ?? 0), 0);
 	const entryCount = chunks.filter((c) => c.role === "entry").length;
-	const graphOnlyRatio =
-		chunks.filter((c) => c.is_graph_expansion).length / chunks.length;
+	const graphOnlyRatio = chunks.filter((c) => c.is_graph_expansion).length / chunks.length;
 
 	const signals: CriticSignals = { maxSimilarity, entryCount, graphOnlyRatio };
 
@@ -826,6 +806,7 @@ git commit -m "feat(rag): add deterministic critic for retrieval quality evaluat
 ## Task 5: `ragTools.ts` — define OpenAI tool schemas (no handler yet)
 
 **Files:**
+
 - Create: `src/lib/server/rag/ragTools.ts` (schemas exported; handlers stubbed)
 
 - [ ] **Step 1: Add tool schemas + handler stubs to `ragTools.ts`**
@@ -975,6 +956,7 @@ git commit -m "feat(rag): define retrieve_docs and get_file_chunks tool schemas"
 ## Task 6: `ragTools` handlers — wrap RAGClient with validation, UUID gen, fileIds mapping
 
 **Files:**
+
 - Modify: `src/lib/server/rag/ragTools.ts` (replace stubs with real handlers)
 - Create: `src/lib/server/rag/ragTools.spec.ts`
 
@@ -1027,10 +1009,7 @@ describe("handleRetrieveDocs", () => {
 
 	it("auto-generates a messageId per call (server-side, not exposed to LLM)", async () => {
 		const ragClient = makeRagClient();
-		await handleRetrieveDocs(
-			{ query: "x" },
-			{ ragClient, inventory: [file("f1", "a.py")] }
-		);
+		await handleRetrieveDocs({ query: "x" }, { ragClient, inventory: [file("f1", "a.py")] });
 		const call = (ragClient.semanticSearch as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(call.messageId).toMatch(/^[0-9a-f-]{36}$/);
 	});
@@ -1052,9 +1031,7 @@ describe("handleRetrieveDocs", () => {
 			{ query: "x", top_k: 999 },
 			{ ragClient, inventory: [file("f1", "a.py")] }
 		);
-		expect(ragClient.semanticSearch).toHaveBeenCalledWith(
-			expect.objectContaining({ top_k: 20 })
-		);
+		expect(ragClient.semanticSearch).toHaveBeenCalledWith(expect.objectContaining({ top_k: 20 }));
 
 		await handleRetrieveDocs(
 			{ query: "x", top_k: 0 },
@@ -1116,11 +1093,14 @@ describe("handleRetrieveDocs", () => {
 			},
 		];
 		const ragClient = makeRagClient({
-			semanticSearch: vi.fn(async () => ({
-				chunks,
-				queryId: "qid",
-				expansion_count: 0,
-			} as SemanticSearchResponse)),
+			semanticSearch: vi.fn(
+				async () =>
+					({
+						chunks,
+						queryId: "qid",
+						expansion_count: 0,
+					}) as SemanticSearchResponse
+			),
 		});
 
 		const result = await handleRetrieveDocs(
@@ -1175,10 +1155,7 @@ describe("handleGetFileChunks", () => {
 		);
 		expect(ragClient.getFileChunks).toHaveBeenCalledWith("f1", 30, 0);
 
-		await handleGetFileChunks(
-			{ fileId: "f1" },
-			{ ragClient, inventory: [file("f1", "a.py")] }
-		);
+		await handleGetFileChunks({ fileId: "f1" }, { ragClient, inventory: [file("f1", "a.py")] });
 		expect(ragClient.getFileChunks).toHaveBeenLastCalledWith("f1", 8, 0);
 	});
 });
@@ -1323,6 +1300,7 @@ git commit -m "feat(rag): implement retrieve_docs and get_file_chunks handlers"
 ## Task 7: `ragCritic.reformulateQuery` — LLM-backed query reformulation with templated fallback
 
 **Files:**
+
 - Modify: `src/lib/server/rag/ragCritic.ts` (add `reformulateQuery` export)
 - Modify: `src/lib/server/rag/ragCritic.spec.ts` (add reformulator tests)
 
@@ -1486,6 +1464,7 @@ git commit -m "feat(rag): add LLM-backed query reformulator with templated fallb
 This task lands the history-stripping cleanup before anything else. It runs regardless of `AGENTIC_RAG` or `ragEnabled` — pure cleanup that never hurts.
 
 **Files:**
+
 - Modify: `src/routes/conversation/[id]/+server.ts` (insert call before existing RAG block)
 
 - [ ] **Step 1: Read the current RAG injection block**
@@ -1507,15 +1486,15 @@ import { stripPriorRagBlocks } from "$lib/server/rag/historyHygiene";
 Find this line (around line 318 in current file):
 
 ```typescript
-			messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
+messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 ```
 
 Add immediately after it:
 
 ```typescript
-			// Strip stale RAG context blocks from prior user messages — runs every turn,
-			// regardless of conv.ragEnabled or AGENTIC_RAG flag. Pure cleanup.
-			messagesForPrompt = stripPriorRagBlocks(messagesForPrompt);
+// Strip stale RAG context blocks from prior user messages — runs every turn,
+// regardless of conv.ragEnabled or AGENTIC_RAG flag. Pure cleanup.
+messagesForPrompt = stripPriorRagBlocks(messagesForPrompt);
 ```
 
 - [ ] **Step 3: Type-check**
@@ -1531,6 +1510,7 @@ npm run dev
 ```
 
 In a browser:
+
 1. Open a new conversation with at least one uploaded file.
 2. Send: "summarize my files" — get a response that injects `<coderef>` blocks.
 3. Send: "what's the second function" — observe that the prior `<coderef>` blocks are no longer in the prompt context (check server logs).
@@ -1551,6 +1531,7 @@ git commit -m "feat(rag): strip stale RAG blocks from history before every turn"
 Behind the flag, the new flow runs INSTEAD of the existing `ragAgent` path. With the flag off, behavior is unchanged.
 
 **Files:**
+
 - Modify: `src/routes/conversation/[id]/+server.ts:320-410` (wrap RAG block with flag branch)
 
 - [ ] **Step 1: Add the flag check + new flow scaffolding**
@@ -1571,138 +1552,124 @@ In `src/routes/conversation/[id]/+server.ts`, locate this section (around line 3
 Wrap the existing try-block so that when `AGENTIC_RAG === "1"`, a new agentic path runs instead. The shape:
 
 ```typescript
-			// ============================================================================
-			// RAG METADATA — Always sync for MCP/GitOps + run gate/inventory for agentic path
-			// ============================================================================
+// ============================================================================
+// RAG METADATA — Always sync for MCP/GitOps + run gate/inventory for agentic path
+// ============================================================================
 
-			const useAgenticRag = process.env.AGENTIC_RAG === "1";
+const useAgenticRag = process.env.AGENTIC_RAG === "1";
 
-			try {
-				const { RAGClient } = await import("$lib/server/rag/client");
-				const ragClient = new RAGClient(undefined, locals.sessionId);
-				const userQuery = newPrompt?.trim();
-				const tenantId = locals.user?._id ?? locals.sessionId;
+try {
+	const { RAGClient } = await import("$lib/server/rag/client");
+	const ragClient = new RAGClient(undefined, locals.sessionId);
+	const userQuery = newPrompt?.trim();
+	const tenantId = locals.user?._id ?? locals.sessionId;
 
-				if (tenantId) {
-					// ── Always sync files for tool metadata ──
-					let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = [];
-					try {
-						const backendFiles =
-							(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
-						const seed = (availableFiles ||
-							[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
-						const mergedMap = new Map(
-							[...seed, ...backendFiles].map((f) => [f.id, f])
-						);
-						mergedFiles = Array.from(mergedMap.values());
-					} catch (e) {
-						console.warn(
-							"[RAG] Failed to sync backend files, using frontend list only.",
-							e
-						);
-						mergedFiles = (availableFiles ||
-							[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
+	if (tenantId) {
+		// ── Always sync files for tool metadata ──
+		let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = [];
+		try {
+			const backendFiles =
+				(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
+			const seed = (availableFiles || []) as unknown as import("$lib/rag/client").RagFileMetadata[];
+			const mergedMap = new Map([...seed, ...backendFiles].map((f) => [f.id, f]));
+			mergedFiles = Array.from(mergedMap.values());
+		} catch (e) {
+			console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
+			mergedFiles = (availableFiles ||
+				[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
+		}
+		mergedFilesForContext = mergedFiles;
+
+		if (conv.ragEnabled !== false && userQuery) {
+			if (useAgenticRag) {
+				// ── AGENTIC PATH: gate + inventory injection only ──
+				// (Tool advertisement and critic happen in runMcpFlow — Tasks 10/11)
+				const { shouldEngage } = await import("$lib/server/rag/ragGate");
+				const { buildInventoryBlock } = await import("$lib/server/rag/inventoryInjector");
+
+				const fileContexts = mergedFiles.map((f) => ({
+					id: f.id,
+					name: f.name,
+					chunkCount: f.chunkCount,
+				}));
+
+				const engaged = shouldEngage(userQuery, fileContexts);
+
+				console.log(
+					`[RAG] Agentic gate: ${engaged ? "ENGAGED" : "SKIPPED"} (files=${mergedFiles.length})`
+				);
+
+				if (engaged) {
+					const inventory = buildInventoryBlock(mergedFiles);
+					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+					if (lastMsg && lastMsg.from === "user") {
+						lastMsg.content = `${inventory}\n\n---\n\n${lastMsg.content}`;
 					}
-					mergedFilesForContext = mergedFiles;
+					// Mark conv so runMcpFlow knows to expose RAG tools (Task 10).
+					// Use a request-scoped flag rather than mutating the DB doc.
+					agenticRagEngaged = true;
+					agenticRagInventory = mergedFiles;
+				}
+			} else {
+				// ── LEGACY PATH: existing ragAgent.classify + buildRagContextMessage ──
+				const { RagAgent } = await import("$lib/server/rag/ragAgent");
+				const { buildRagContextMessage, buildFileListNote } = await import(
+					"$lib/server/rag/contextBuilder"
+				);
 
-					if (conv.ragEnabled !== false && userQuery) {
-						if (useAgenticRag) {
-							// ── AGENTIC PATH: gate + inventory injection only ──
-							// (Tool advertisement and critic happen in runMcpFlow — Tasks 10/11)
-							const { shouldEngage } = await import("$lib/server/rag/ragGate");
-							const { buildInventoryBlock } = await import(
-								"$lib/server/rag/inventoryInjector"
-							);
+				const ragAgent = new RagAgent(ragClient);
+				const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
 
-							const fileContexts = mergedFiles.map((f) => ({
-								id: f.id,
-								name: f.name,
-								chunkCount: f.chunkCount,
-							}));
-
-							const engaged = shouldEngage(userQuery, fileContexts);
-
-							console.log(
-								`[RAG] Agentic gate: ${engaged ? "ENGAGED" : "SKIPPED"} (files=${mergedFiles.length})`
-							);
-
-							if (engaged) {
-								const inventory = buildInventoryBlock(mergedFiles);
-								const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-								if (lastMsg && lastMsg.from === "user") {
-									lastMsg.content = `${inventory}\n\n---\n\n${lastMsg.content}`;
-								}
-								// Mark conv so runMcpFlow knows to expose RAG tools (Task 10).
-								// Use a request-scoped flag rather than mutating the DB doc.
-								agenticRagEngaged = true;
-								agenticRagInventory = mergedFiles;
-							}
-						} else {
-							// ── LEGACY PATH: existing ragAgent.classify + buildRagContextMessage ──
-							const { RagAgent } = await import("$lib/server/rag/ragAgent");
-							const { buildRagContextMessage, buildFileListNote } = await import(
-								"$lib/server/rag/contextBuilder"
-							);
-
-							const ragAgent = new RagAgent(ragClient);
-							const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
-
-							const notReadyFiles = mergedFiles.filter(
-								(f) => f.finishEmbedding === false
-							);
-							if (notReadyFiles.length > 0) {
-								const referencedNotReady = notReadyFiles.find((f) =>
-									userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
-								);
-								const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-								if (referencedNotReady && lastMsg?.from === "user") {
-									lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
-								} else if (lastMsg?.from === "user") {
-									lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
-								}
-							}
-
-							const { plan, chunks } = await ragAgent.run(
-								userQuery,
-								mergedFiles,
-								historyForAgent,
-								newUserMessageId.toString()
-							);
-
-							const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-
-							if (chunks.length > 0) {
-								const ragContextMessage = buildRagContextMessage(
-									chunks,
-									plan.strategy,
-									mergedFiles
-								);
-								ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
-								ragStrategyForAssistant = plan.strategy;
-								if (lastMsg && lastMsg.from === "user") {
-									lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
-								}
-							} else if (plan.strategy === "NO_RAG" && mergedFiles.length > 0) {
-								if (lastMsg && lastMsg.from === "user") {
-									const fileNote = buildFileListNote(mergedFiles);
-									lastMsg.content = `${fileNote}\n\n---\n\n${lastMsg.content}`;
-								}
-							}
-						}
+				const notReadyFiles = mergedFiles.filter((f) => f.finishEmbedding === false);
+				if (notReadyFiles.length > 0) {
+					const referencedNotReady = notReadyFiles.find((f) =>
+						userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
+					);
+					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+					if (referencedNotReady && lastMsg?.from === "user") {
+						lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
+					} else if (lastMsg?.from === "user") {
+						lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
 					}
 				}
-			} catch (error) {
-				console.error("[RAG] Metadata sync or injection failed:", error);
+
+				const { plan, chunks } = await ragAgent.run(
+					userQuery,
+					mergedFiles,
+					historyForAgent,
+					newUserMessageId.toString()
+				);
+
+				const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+
+				if (chunks.length > 0) {
+					const ragContextMessage = buildRagContextMessage(chunks, plan.strategy, mergedFiles);
+					ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
+					ragStrategyForAssistant = plan.strategy;
+					if (lastMsg && lastMsg.from === "user") {
+						lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+					}
+				} else if (plan.strategy === "NO_RAG" && mergedFiles.length > 0) {
+					if (lastMsg && lastMsg.from === "user") {
+						const fileNote = buildFileListNote(mergedFiles);
+						lastMsg.content = `${fileNote}\n\n---\n\n${lastMsg.content}`;
+					}
+				}
 			}
+		}
+	}
+} catch (error) {
+	console.error("[RAG] Metadata sync or injection failed:", error);
+}
 ```
 
 ALSO declare the two new request-scoped variables near the existing declarations of `ragChunksForAssistant` and `ragStrategyForAssistant` (around line 269):
 
 ```typescript
-		let ragChunksForAssistant: ChatFileChunk[] | undefined;
-		let ragStrategyForAssistant: string | undefined;
-		let agenticRagEngaged = false;
-		let agenticRagInventory: import("$lib/rag/client").RagFileMetadata[] = [];
+let ragChunksForAssistant: ChatFileChunk[] | undefined;
+let ragStrategyForAssistant: string | undefined;
+let agenticRagEngaged = false;
+let agenticRagInventory: import("$lib/rag/client").RagFileMetadata[] = [];
 ```
 
 - [ ] **Step 2: Make `agenticRagEngaged` and `agenticRagInventory` visible to `runMcpFlow`**
@@ -1761,6 +1728,7 @@ git commit -m "feat(rag): add AGENTIC_RAG flag + gate/inventory injection (legac
 ## Task 10: Advertise RAG tools in `runMcpFlow.ts` when gate engaged
 
 **Files:**
+
 - Modify: `src/lib/server/textGeneration/mcp/runMcpFlow.ts` (tool list assembly)
 - Modify: `src/lib/server/textGeneration/mcp/toolInvocation.ts` (handler dispatch for the two new tools)
 
@@ -1781,18 +1749,13 @@ In `runMcpFlow.ts`, locate the line where `oaTools` is initialized (around line 
 Add immediately after the assignment:
 
 ```typescript
-		// Append agentic RAG tools when the request has engaged RAG context.
-		// Skipped entirely when ragContext is absent or engaged=false.
-		if (options.ragContext?.engaged) {
-			const { RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL } = await import(
-				"$lib/server/rag/ragTools"
-			);
-			oaTools.push(RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL);
-			logger.info(
-				{ tools: ["retrieve_docs", "get_file_chunks"] },
-				"[mcp] RAG tools advertised"
-			);
-		}
+// Append agentic RAG tools when the request has engaged RAG context.
+// Skipped entirely when ragContext is absent or engaged=false.
+if (options.ragContext?.engaged) {
+	const { RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL } = await import("$lib/server/rag/ragTools");
+	oaTools.push(RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL);
+	logger.info({ tools: ["retrieve_docs", "get_file_chunks"] }, "[mcp] RAG tools advertised");
+}
 ```
 
 Also extend the function's options type to accept `ragContext` (search for the existing `options` type definition in the file — likely an interface at the top — and add):
@@ -1812,11 +1775,7 @@ Read `src/lib/server/textGeneration/mcp/toolInvocation.ts` to find the dispatche
 Add a branch for the two RAG tool names: when the call name is `retrieve_docs` or `get_file_chunks`, dispatch to the handlers from `ragTools.ts` instead of going through the MCP client. Pseudocode:
 
 ```typescript
-import {
-	handleRetrieveDocs,
-	handleGetFileChunks,
-	RAG_TOOL_NAMES,
-} from "$lib/server/rag/ragTools";
+import { handleRetrieveDocs, handleGetFileChunks, RAG_TOOL_NAMES } from "$lib/server/rag/ragTools";
 
 // In the dispatch function:
 if (RAG_TOOL_NAMES.has(toolName) && options.ragContext) {
@@ -1862,7 +1821,7 @@ Initialize `chunksAccumulator: []` in `+server.ts` (Task 9 caller), and after th
 
 ```typescript
 messageToWriteTo.ragChunks = Array.from(
-    new Map(agenticRagChunksAccumulator.map((c) => [c.id, c])).values()
+	new Map(agenticRagChunksAccumulator.map((c) => [c.id, c])).values()
 );
 messageToWriteTo.ragStrategy = "AGENTIC";
 ```
@@ -1874,6 +1833,7 @@ AGENTIC_RAG=1 npm run dev
 ```
 
 In a browser:
+
 1. Upload `auth.py` (or any small file).
 2. Send: "give me the authenticate function from auth.py".
 3. Confirm the LLM calls `retrieve_docs` (visible in server logs as `[mcp] tools executed`).
@@ -1901,6 +1861,7 @@ git commit -m "feat(rag): advertise retrieve_docs/get_file_chunks tools and disp
 The critic runs ONLY for `retrieve_docs` results (not `get_file_chunks` — those are sequential reads with `similarity=1.0` hardcoded; critic would always PASS, no value added). Per-turn retry cap: 2.
 
 **Files:**
+
 - Modify: `src/lib/server/textGeneration/mcp/toolInvocation.ts` (intercept retrieve_docs result, run critic, retry if RETRY)
 
 - [ ] **Step 1: Add critic hook in the `retrieve_docs` branch**
@@ -2027,6 +1988,7 @@ git commit -m "feat(rag): wire critic with one-shot retry and reformulated query
 ## Task 12: Update `toolPrompt.ts` — replace `retrieve_docs` block, drop `rerank_docs`
 
 **Files:**
+
 - Modify: `src/lib/server/textGeneration/utils/toolPrompt.ts` (lines 37-39, 48, plus 16-18 stays)
 
 - [ ] **Step 1: Read the current prompt**
@@ -2106,6 +2068,7 @@ git commit -m "feat(rag): expand retrieve_docs prompt; drop rerank_docs (auto on
 ## Task 13: Integration test — five regression cases
 
 **Files:**
+
 - Create: `src/lib/server/rag/conversation.rag.spec.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -2289,14 +2252,8 @@ describe("integration: messageId is generated server-side, never from LLM", () =
 		}));
 		const ragClient = { semanticSearch } as unknown as RAGClient;
 
-		await handleRetrieveDocs(
-			{ query: "a" },
-			{ ragClient, inventory: FILES }
-		);
-		await handleRetrieveDocs(
-			{ query: "b" },
-			{ ragClient, inventory: FILES }
-		);
+		await handleRetrieveDocs({ query: "a" }, { ragClient, inventory: FILES });
+		await handleRetrieveDocs({ query: "b" }, { ragClient, inventory: FILES });
 
 		const call1 = (semanticSearch as ReturnType<typeof vi.fn>).mock.calls[0][0].messageId;
 		const call2 = (semanticSearch as ReturnType<typeof vi.fn>).mock.calls[1][0].messageId;
@@ -2330,6 +2287,7 @@ git commit -m "test(rag): integration tests for 5 canonical agentic flow cases"
 ## Task 14: Flip flag default to ON; delete dead code
 
 **Files:**
+
 - Modify: `src/routes/conversation/[id]/+server.ts` (change flag default; delete legacy path)
 - Delete: `src/lib/server/rag/ragAgent.ts`
 - Delete: `src/lib/server/rag/ragAgent.spec.ts`
@@ -2425,10 +2383,7 @@ export interface RagFileContext {
 /**
  * Find a file explicitly named in the query (exact, base name, or keyword token match).
  */
-export function findFileMatch(
-	query: string,
-	files: RagFileContext[]
-): RagFileContext | undefined {
+export function findFileMatch(query: string, files: RagFileContext[]): RagFileContext | undefined {
 	const lowerQuery = query.toLowerCase();
 	for (const file of files) {
 		const lowerName = file.name.toLowerCase();
@@ -2537,6 +2492,7 @@ git commit -m "feat(rag): flip AGENTIC_RAG default to ON; delete legacy ragAgent
 After implementing all 14 tasks:
 
 - [ ] **Spec coverage**: Each spec section (§§1–15) has at least one task implementing it.
+
   - §3 Backend surface: Tasks 5/6 (tool schemas, handler mapping)
   - §3.1 fileIds gap: Acknowledged in plan header; handler passes `fileIds` from day one
   - §4 Architecture: Tasks 8/9/10/11 wire the pipeline
@@ -2554,6 +2510,7 @@ After implementing all 14 tasks:
 - [ ] **Placeholder scan**: No TBDs, no "implement later", no "similar to Task N" without code shown.
 
 - [ ] **Type consistency**:
+
   - `RetrieveDocsArgs` / `GetFileChunksArgs` types defined in Task 5, used in Tasks 6, 10, 11, 13.
   - `RagToolResult` shape consistent across handlers and dispatch.
   - `ragContext` shape grows monotonically: Task 9 adds `engaged` + `inventory` + `ragClient`; Task 10 adds `chunksAccumulator`; Task 11 adds `criticRetriesUsed`. Final shape verified in Task 11.

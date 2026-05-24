@@ -26,6 +26,7 @@ import type { TextGenerationContext } from "$lib/server/textGeneration/types";
 import { logger } from "$lib/server/logger.js";
 import { AbortRegistry } from "$lib/server/abortRegistry";
 import { MetricsServer } from "$lib/server/metrics";
+import { stripPriorRagBlocks } from "$lib/server/rag/historyHygiene";
 import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ request, locals, params, getClientAddress }) => {
@@ -232,13 +233,15 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 
 	// we will append tokens to the content of this message
 	let messageToWriteToId: Message["id"] | undefined = undefined;
-	// RAG chunks to attach to the assistant message for citation UI rendering
-	let ragChunksForAssistant: import("$lib/rag/client").ChatFileChunk[] | undefined = undefined;
-	let ragStrategyForAssistant: import("$lib/server/rag/ragAgent").RagStrategy | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
 	// RAG files for context injection (MCP/GitOps)
 	let mergedFilesForContext: import("$lib/rag/client").RagFileMetadata[] = [];
+	// Request-scoped agentic RAG state (consumed by runMcpFlow tool loop)
+	let agenticRagEngaged = false;
+	let agenticRagInventory: import("$lib/rag/client").RagFileMetadata[] = [];
+	const agenticRagChunksAccumulator: import("$lib/rag/client").ChatFileChunk[] = [];
+	let agenticRagClient: import("$lib/server/rag/client").RAGClient | undefined = undefined;
 
 	if (isRetry && messageId) {
 		// two cases, if we're retrying a user message with a newPrompt set,
@@ -318,90 +321,62 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 
 		// ============================================================================
-		// RAG METADATA — Always sync for MCP/GitOps (even if prompt injection is off)
+		// RAG METADATA — sync inventory and engage agentic tools when enabled
 		// ============================================================================
+		const useAgenticRag = process.env.AGENTIC_RAG !== "0"; // default ON
 
 		try {
 			const { RAGClient } = await import("$lib/server/rag/client");
-			const { RagAgent } = await import("$lib/server/rag/ragAgent");
-			const { buildRagContextMessage, buildFileListNote } = await import(
-				"$lib/server/rag/contextBuilder"
-			);
-			// Initialize RAG client with session (JWT auth)
 			const ragClient = new RAGClient(undefined, locals.sessionId);
 			const userQuery = newPrompt?.trim();
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
 			if (tenantId) {
-				// ── Always Sync files for Tool Metadata (GitOps resolution) ──
 				let mergedFiles: import("$lib/rag/client").RagFileMetadata[] = [];
 				try {
 					const backendFiles =
 						(await ragClient.listFiles()) as import("$lib/rag/client").RagFileMetadata[];
-					// seed with thin client refs first; backend entries (full shape) win on duplicate ids
-					const seed = (availableFiles || []) as unknown as import("$lib/rag/client").RagFileMetadata[];
+					const seed = (availableFiles ||
+						[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
 					const mergedMap = new Map([...seed, ...backendFiles].map((f) => [f.id, f]));
 					mergedFiles = Array.from(mergedMap.values());
 				} catch (e) {
-					// Handle 401 or other network errors gracefully
 					console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
-					mergedFiles = (availableFiles || []) as unknown as import("$lib/rag/client").RagFileMetadata[];
+					mergedFiles = (availableFiles ||
+						[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
 				}
+
 				mergedFilesForContext = mergedFiles;
 
-				// ── RAG INJECTION: Only if enabled for conversation ─────────────
-				if (conv.ragEnabled !== false && userQuery) {
-					const ragAgent = new RagAgent(ragClient);
-					const historyForAgent = buildSubtree(conv, newUserMessageId).slice(0, -1);
+				if (useAgenticRag && conv.ragEnabled !== false && userQuery) {
+					const { shouldEngage } = await import("$lib/server/rag/ragGate");
+					const { buildInventoryBlock } = await import("$lib/server/rag/inventoryInjector");
 
-					// ── Embedding-ready guard ─────────────────────────────────────────────────
-					// Warn LLM when files are still being processed so it can explain to user
-					const notReadyFiles = mergedFiles.filter((f) => f.finishEmbedding === false);
-					if (notReadyFiles.length > 0) {
-						const referencedNotReady = notReadyFiles.find((f) =>
-							userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
-						);
-						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-						if (referencedNotReady && lastMsg?.from === "user") {
-							lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
-						} else if (lastMsg?.from === "user") {
-							lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
-						}
-					}
+					const fileContexts = mergedFiles.map((f) => ({
+						id: f.id,
+						name: f.name,
+						chunkCount: f.chunkCount,
+					}));
+					const engaged = shouldEngage(userQuery, fileContexts);
 
-					// ── Run the RAG Agent ─────────────────────────────────────────────
-					const { plan, chunks } = await ragAgent.run(
-						userQuery,
-						mergedFiles,
-						historyForAgent,
-						newUserMessageId.toString()
+					console.log(
+						`[RAG] Agentic gate: ${engaged ? "ENGAGED" : "SKIPPED"} (files=${mergedFiles.length})`
 					);
 
-					const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-
-					if (chunks.length > 0) {
-						// Pass mergedFiles so LLM sees the full file inventory alongside chunks
-						const ragContextMessage = buildRagContextMessage(chunks, plan.strategy, mergedFiles);
-
-						// Attach chunks to assistant message for citation UI rendering
-						ragChunksForAssistant = ragContextMessage.ragChunks ?? chunks;
-						ragStrategyForAssistant = plan.strategy;
-
-						// Prefix the latest user message with retrieved context
-						if (lastMsg && lastMsg.from === "user") {
-							lastMsg.content = `${ragContextMessage.content}\n\n---\n\n${lastMsg.content}`;
+					if (engaged) {
+						const inventory = buildInventoryBlock(mergedFiles);
+						const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+						if (lastMsg && lastMsg.from === "user" && inventory.length > 0) {
+							lastMsg.content = `${inventory}\n\n---\n\n${lastMsg.content}`;
 						}
-					} else if (plan.strategy === "NO_RAG" && mergedFiles.length > 0) {
-						// Meta query ("what files do I have?") — inject file list only so LLM can answer
-						if (lastMsg && lastMsg.from === "user") {
-							const fileNote = buildFileListNote(mergedFiles);
-							lastMsg.content = `${fileNote}\n\n---\n\n${lastMsg.content}`;
-						}
+
+						agenticRagEngaged = true;
+						agenticRagInventory = mergedFiles;
+						agenticRagClient = ragClient;
 					}
 				}
 			}
 		} catch (error) {
-			// NEVER block chat if RAG fails — degrade gracefully
 			console.error("[RAG] Metadata sync or injection failed:", error);
 		}
 
@@ -410,14 +385,12 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		// ============================================================================
 	}
 
+	// Strip stale RAG blocks from prior user turns while preserving latest message.
+	messagesForPrompt = stripPriorRagBlocks(messagesForPrompt);
+
 	const messageToWriteTo = conv.messages.find((message) => message.id === messageToWriteToId);
 	if (!messageToWriteTo) {
 		error(500, "Failed to create message");
-	}
-	// Attach RAG citation chunks to the assistant message so the frontend can render them
-	if (ragChunksForAssistant) {
-		messageToWriteTo.ragChunks = ragChunksForAssistant;
-		messageToWriteTo.ragStrategy = ragStrategyForAssistant;
 	}
 	if (messagesForPrompt.length === 0) {
 		error(500, "Failed to create prompt");
@@ -685,6 +658,17 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 							? userSettings?.providerOverrides?.[model.id]
 							: undefined,
 					ragFiles: mergedFilesForContext,
+					...(agenticRagEngaged && agenticRagClient
+						? {
+								ragContext: {
+									engaged: true,
+									inventory: agenticRagInventory,
+									ragClient: agenticRagClient,
+									chunksAccumulator: agenticRagChunksAccumulator,
+									criticRetriesUsed: 0,
+								},
+							}
+						: {}),
 					locals,
 					abortController: ctrl,
 				};
@@ -753,6 +737,13 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 						message: "No output was generated. Something went wrong.",
 					});
 				}
+			}
+
+			if (agenticRagChunksAccumulator.length > 0) {
+				messageToWriteTo.ragChunks = Array.from(
+					new Map(agenticRagChunksAccumulator.map((chunk) => [chunk.id, chunk])).values()
+				);
+				messageToWriteTo.ragStrategy = "AGENTIC";
 			}
 
 			await persistConversation();

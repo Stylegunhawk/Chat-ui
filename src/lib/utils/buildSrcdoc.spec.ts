@@ -17,8 +17,6 @@ describe("buildSrcdoc", () => {
 	it("injects base tag into existing head", () => {
 		const html = "<!doctype html><html><head><title>T</title></head><body></body></html>";
 		const result = buildSrcdoc(html, "ch3");
-		expect(result.indexOf('<base target="_blank">')).toBeGreaterThan(
-			result.indexOf("<head>")
-		);
+		expect(result.indexOf('<base target="_blank">')).toBeGreaterThan(result.indexOf("<head>"));
 	});
 });

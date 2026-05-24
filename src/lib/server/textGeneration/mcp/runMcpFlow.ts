@@ -1,3 +1,17 @@
+/**
+ * runToolFlow — Generic LLM tool-calling orchestrator.
+ *
+ * Despite its location under `mcp/`, this loop dispatches THREE classes of tools:
+ *   1. MCP server tools (GitHub, Exa, etc.) — fetched dynamically per-server
+ *   2. Local agentic RAG tools (retrieve_docs, get_file_chunks) — when ragContext.engaged
+ *   3. Client-side tools (generate_artifact) — handled in toolInvocation.ts
+ *
+ * The function bails out only when there are NO tools to advertise from any source.
+ * It used to bail when zero MCP servers were configured, which was a false coupling —
+ * RAG and client-side tools work fine without MCP servers.
+ *
+ * Legacy alias `runMcpFlow` is retained for callers that haven't migrated yet.
+ */
 import { config } from "$lib/server/config";
 import { MessageUpdateType, type MessageUpdate } from "$lib/types/MessageUpdate";
 import { getMcpServers } from "$lib/server/mcp/registry";
@@ -28,8 +42,9 @@ import { prepareMessagesWithFiles } from "$lib/server/textGeneration/utils/prepa
 import { makeImageProcessor } from "$lib/server/endpoints/images";
 import { logger } from "$lib/server/logger";
 import { AbortedGenerations } from "$lib/server/abortedGenerations";
+import { GET_FILE_CHUNKS_TOOL, RETRIEVE_DOCS_TOOL } from "$lib/server/rag/ragTools";
 
-export type RunMcpFlowContext = Pick<
+export type RunToolFlowContext = Pick<
 	TextGenerationContext,
 	| "model"
 	| "conv"
@@ -39,12 +54,19 @@ export type RunMcpFlowContext = Pick<
 	| "provider"
 	| "locals"
 	| "ragFiles"
+	| "ragContext"
 > & { messages: EndpointMessage[] };
 
-// Return type: "completed" = MCP ran successfully, "not_applicable" = MCP didn't run, "aborted" = user aborted
-export type McpFlowResult = "completed" | "not_applicable" | "aborted";
+/** @deprecated use RunToolFlowContext */
+export type RunMcpFlowContext = RunToolFlowContext;
 
-export async function* runMcpFlow({
+// Return type: "completed" = ran successfully, "not_applicable" = nothing to do, "aborted" = user aborted
+export type ToolFlowResult = "completed" | "not_applicable" | "aborted";
+
+/** @deprecated use ToolFlowResult */
+export type McpFlowResult = ToolFlowResult;
+
+export async function* runToolFlow({
 	model,
 	conv,
 	messages,
@@ -58,6 +80,7 @@ export async function* runMcpFlow({
 	abortController,
 	promptedAt,
 	ragFiles,
+	ragContext,
 }: RunMcpFlowContext & {
 	preprompt?: string;
 	abortSignal?: AbortSignal;
@@ -142,10 +165,17 @@ export async function* runMcpFlow({
 		// ignore selection merge errors and proceed with env servers
 	}
 
-	// If selection/merge yielded no servers, bail early with clearer log
+	// If selection/merge yielded no servers, bail early — UNLESS local tools (RAG)
+	// are engaged for this request, in which case we still have tools to advertise.
 	if (servers.length === 0) {
-		logger.warn({}, "[mcp] no MCP servers selected after merge/name filter");
-		return "not_applicable";
+		if (ragContext?.engaged) {
+			console.log(
+				"[RAG] zero MCP servers (post merge/name filter) but ragContext engaged — continuing for local RAG tools"
+			);
+		} else {
+			logger.warn({}, "[mcp] no MCP servers selected after merge/name filter");
+			return "not_applicable";
+		}
 	}
 
 	// Enforce server-side safety (public HTTPS only, no private ranges)
@@ -169,8 +199,14 @@ export async function* runMcpFlow({
 		} catch {}
 	}
 	if (servers.length === 0) {
-		logger.warn({}, "[mcp] all selected MCP servers rejected by URL safety guard");
-		return "not_applicable";
+		if (ragContext?.engaged) {
+			console.log(
+				"[RAG] all MCP servers rejected by URL safety, but ragContext engaged — continuing for local RAG tools"
+			);
+		} else {
+			logger.warn({}, "[mcp] all selected MCP servers rejected by URL safety guard");
+			return "not_applicable";
+		}
 	}
 
 	// Optionally attach the logged-in user's HF token to the official HF MCP server only.
@@ -237,8 +273,11 @@ export async function* runMcpFlow({
 		{ count: servers.length, servers: servers.map((s) => s.name) },
 		"[mcp] servers configured"
 	);
-	if (servers.length === 0) {
+	if (servers.length === 0 && !ragContext?.engaged) {
 		return "not_applicable";
+	}
+	if (servers.length === 0) {
+		console.log("[RAG] zero MCP servers but ragContext engaged — proceeding to RAG tool advertisement");
 	}
 
 	// Gate MCP flow based on model tool support (aggregated) with user override
@@ -300,6 +339,17 @@ export async function* runMcpFlow({
 		const { tools: oaTools, mapping } = await getOpenAiToolsForMcp(servers, {
 			signal: abortSignal,
 		});
+		if (ragContext?.engaged) {
+			oaTools.push(RETRIEVE_DOCS_TOOL, GET_FILE_CHUNKS_TOOL);
+			console.log(
+				`[RAG] tools advertised: retrieve_docs, get_file_chunks (inventory=${ragContext.inventory.length} files)`
+			);
+			logger.info({ tools: ["retrieve_docs", "get_file_chunks"] }, "[mcp] RAG tools advertised");
+		} else {
+			console.log(
+				`[RAG] tools NOT advertised (ragContext.engaged=${Boolean(ragContext?.engaged)})`
+			);
+		}
 		try {
 			logger.info(
 				{ toolCount: oaTools.length, toolNames: oaTools.map((t) => t.function.name) },
@@ -472,6 +522,7 @@ export async function* runMcpFlow({
 		}
 
 		for (let loop = 0; loop < 10; loop += 1) {
+			console.log(`[RAG] mcp loop iteration ${loop} starting`);
 			// Check for abort at the start of each loop iteration
 			if (checkAborted()) {
 				logger.info({ loop }, "[mcp] aborting at start of loop iteration");
@@ -626,6 +677,9 @@ export async function* runMcpFlow({
 			}
 
 			if (Object.keys(toolCallState).length > 0) {
+				console.log(
+					`[RAG] LLM emitted ${Object.keys(toolCallState).length} tool_call(s) on loop ${loop}: ${Object.values(toolCallState).map((c) => c?.name ?? "?").join(", ")}`
+				);
 				// If any streamed call is missing id, perform a quick non-stream retry to recover full tool_calls with ids
 				const missingId = Object.values(toolCallState).some((c) => c?.name && !c?.id);
 				let calls: NormalizedToolCall[];
@@ -693,6 +747,7 @@ export async function* runMcpFlow({
 					abortSignal,
 					locals,
 					ragFiles,
+					ragContext,
 				});
 				let toolMsgCount = 0;
 				let toolRunCount = 0;
@@ -743,6 +798,9 @@ export async function* runMcpFlow({
 				text: lastAssistantContent,
 				interrupted: false,
 			};
+			console.log(
+				`[RAG] FINAL answer emitted on loop ${loop} (length=${lastAssistantContent.length} chars)`
+			);
 			logger.info(
 				{ length: lastAssistantContent.length, loop },
 				"[mcp] final answer emitted (no tool_calls)"
@@ -770,3 +828,6 @@ export async function* runMcpFlow({
 
 	return "not_applicable";
 }
+
+/** @deprecated use runToolFlow. Legacy alias preserved for callers that haven't migrated. */
+export const runMcpFlow = runToolFlow;

@@ -306,7 +306,10 @@
 
 								<!-- Delete Button -->
 								<button
-									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 {fileToDelete?.id === file.id ? 'text-red-600 dark:text-red-400' : ''}"
+									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 {fileToDelete?.id ===
+									file.id
+										? 'text-red-600 dark:text-red-400'
+										: ''}"
 									onclick={() => (fileToDelete = file)}
 									aria-label="Delete file"
 									title="Delete file"

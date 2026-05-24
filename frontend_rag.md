@@ -1,4 +1,5 @@
 # Frontend RAG Agentic Architecture
+
 **Version:** 3.0 — Agentic Orchestrator (LLM + Regex Fallback)  
 **Last Updated:** 2026-03-03
 
@@ -9,6 +10,7 @@
 The frontend RAG system utilizes an **Agentic Orchestrator** pattern. Instead of simple rule-based routing, a dedicated `RagAgent` uses an LLM-based `RagPlanner` to decide the best retrieval strategy.
 
 **Key Design Principles:**
+
 1. **Low Latency**: LLM planning is capped at 2 seconds.
 2. **Reliability**: If the LLM planner fails or times out, it instantly falls back to a deterministic regex-based planner.
 3. **Purity**: The `RagAgent` is dependency-injected and doesn't handle auth directly; it receives everything needed for a request at execution time.
@@ -45,14 +47,14 @@ User Message (POST /conversation/[id])
 
 The planner selects one of these core strategies:
 
-| Strategy | Description | Best For... |
-|---|---|---|
-| `NO_RAG` | No retrieval. Injects file list only. | Metadata queries ("what files do I have?") |
-| `SEMANTIC_SEARCH` | Global cross-file search. | General technical questions. |
-| `FILE_SEMANTIC` | Search within 1-2 specific files. | Questions about a specific module. |
-| `FILE_DEEP_DIVE` | Full read of 1-3 files. | Summarization of specific files. |
-| `FULL_CONTEXT` | Deep dive into ALL available files. | Global overviews, project structure. |
-| `HYBRID` | Per-file mix of Deep Dive/Semantic. | Complex relational questions ("X vs Y"). |
+| Strategy          | Description                           | Best For...                                |
+| ----------------- | ------------------------------------- | ------------------------------------------ |
+| `NO_RAG`          | No retrieval. Injects file list only. | Metadata queries ("what files do I have?") |
+| `SEMANTIC_SEARCH` | Global cross-file search.             | General technical questions.               |
+| `FILE_SEMANTIC`   | Search within 1-2 specific files.     | Questions about a specific module.         |
+| `FILE_DEEP_DIVE`  | Full read of 1-3 files.               | Summarization of specific files.           |
+| `FULL_CONTEXT`    | Deep dive into ALL available files.   | Global overviews, project structure.       |
+| `HYBRID`          | Per-file mix of Deep Dive/Semantic.   | Complex relational questions ("X vs Y").   |
 
 ---
 
@@ -61,12 +63,14 @@ The planner selects one of these core strategies:
 To ensure the chat never hangs, the system uses a **Tiered Planning** approach:
 
 ### Tier 1: LLM Planning (`ragPlanner.ts`)
+
 - **System Prompt:** Instructs the model to return structured JSON.
 - **Constraints:** Max 300 tokens, 0 temperature.
 - **Zod Validation:** Discards hallucinated or malformed JSON.
 - **Hard Limits:** Trims plan to max 3 DEEP_DIVE files and 5 total files.
 
 ### Tier 2: Regex Fallback (`ragAgentLegacy.ts`)
+
 - **Deterministic:** Pure regex-based inference.
 - **Instant:** Zero network latency.
 - **Priority:**
@@ -89,11 +93,11 @@ To ensure the chat never hangs, the system uses a **Tiered Planning** approach:
 
 ## Key Files & Roles
 
-| File path | Purpose |
-|---|---|
-| `src/lib/server/rag/ragAgent.ts` | The main orchestrator. Coordinates planning and parallel execution. |
-| `src/lib/server/rag/ragPlanner.ts` | The LLM-based strategist. Uses Zod for plan validation. |
-| `src/lib/server/rag/ragAgentLegacy.ts` | The deterministic fallback planner using regex rules. |
-| `src/lib/server/rag/historyCompressor.ts` | Compresses conversation history for efficient planning. |
-| `src/lib/server/rag/contextBuilder.ts` | Formats chunks and manages the character-based context budget. |
-| `src/lib/rag/client.ts` | Core RAG client using JWT Authentication. |
+| File path                                 | Purpose                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `src/lib/server/rag/ragAgent.ts`          | The main orchestrator. Coordinates planning and parallel execution. |
+| `src/lib/server/rag/ragPlanner.ts`        | The LLM-based strategist. Uses Zod for plan validation.             |
+| `src/lib/server/rag/ragAgentLegacy.ts`    | The deterministic fallback planner using regex rules.               |
+| `src/lib/server/rag/historyCompressor.ts` | Compresses conversation history for efficient planning.             |
+| `src/lib/server/rag/contextBuilder.ts`    | Formats chunks and manages the character-based context budget.      |
+| `src/lib/rag/client.ts`                   | Core RAG client using JWT Authentication.                           |

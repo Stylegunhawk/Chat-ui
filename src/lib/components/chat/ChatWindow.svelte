@@ -626,9 +626,12 @@
 
 		<div class="w-full">
 			{#if lastIsImageError}
-				<div class="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-400">
+				<div
+					class="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-400"
+				>
 					<span class="shrink-0">⚠</span>
-					This model doesn't support image input. Your image has been removed — you can continue chatting below.
+					This model doesn't support image input. Your image has been removed — you can continue chatting
+					below.
 				</div>
 			{/if}
 			<div class="flex w-full *:mb-3">

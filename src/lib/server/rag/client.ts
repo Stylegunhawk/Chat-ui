@@ -179,7 +179,7 @@ export class RAGClient {
 		if (!response.ok) {
 			// 404 = No files uploaded yet (not an error)
 			if (response.status === 404) {
-				return { chunks: [], queryId: "" };
+				return { chunks: [], queryId: "", expansion_count: 0 };
 			}
 			throw new Error(`RAG search failed: ${response.status} ${response.statusText}`);
 		}
@@ -233,7 +233,11 @@ export class RAGClient {
 	/**
 	 * Get chunks for a specific file
 	 */
-	async getFileChunks(fileId: string, limit: number = 5, offset: number = 0): Promise<SemanticSearchResponse> {
+	async getFileChunks(
+		fileId: string,
+		limit: number = 5,
+		offset: number = 0
+	): Promise<SemanticSearchResponse> {
 		const jwt = await this.getJWT();
 		const response = await this.makeRequest(
 			`${this.baseUrl}/api/v1/rag/file/${fileId}/chunks?limit=${limit}&offset=${offset}`,

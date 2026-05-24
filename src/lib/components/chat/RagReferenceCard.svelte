@@ -10,7 +10,7 @@
 	interface Props {
 		chunks: ChatFileChunk[];
 		expansionCount?: number;
-		strategy?: "NO_RAG" | "SUMMARIZE_FILE" | "SUMMARIZE_ALL" | "SEARCH";
+		strategy?: "AGENTIC" | "NO_RAG" | "SUMMARIZE_FILE" | "SUMMARIZE_ALL" | "SEARCH";
 	}
 
 	let { chunks, expansionCount = 0, strategy }: Props = $props();
@@ -32,9 +32,11 @@
 	let openFiles = $state<Set<string>>(new Set());
 
 	// De-duplicate by fileId for the header pills
-	const uniqueFiles = $derived(
-		[...new Map(chunks.map((c) => [c.fileId, { filename: c.filename, fileType: c.fileType }])).values()]
-	);
+	const uniqueFiles = $derived([
+		...new Map(
+			chunks.map((c) => [c.fileId, { filename: c.filename, fileType: c.fileType }])
+		).values(),
+	]);
 
 	const entryChunks = $derived(chunks.filter((c) => c.role === "entry"));
 	const dependencyChunks = $derived(chunks.filter((c) => c.role === "dependency"));
@@ -99,7 +101,9 @@
 	}
 </script>
 
-<div class="mt-3 overflow-hidden rounded-xl border border-gray-200/80 bg-white/60 shadow-sm backdrop-blur-sm dark:border-gray-700/60 dark:bg-gray-900/40">
+<div
+	class="mt-3 overflow-hidden rounded-xl border border-gray-200/80 bg-white/60 shadow-sm backdrop-blur-sm dark:border-gray-700/60 dark:bg-gray-900/40"
+>
 	<!-- Header button -->
 	<button
 		class="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-gray-50/80 dark:hover:bg-gray-800/40"
@@ -109,13 +113,17 @@
 			<!-- Source file pills -->
 			{#each uniqueFiles.slice(0, 3) as file}
 				{@const Icon = fileIcon(file.filename)}
-				<span class="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+				<span
+					class="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+				>
 					<Icon class="size-3 flex-none" />
 					{shortFilename(file.filename)}
 				</span>
 			{/each}
 			{#if uniqueFiles.length > 3}
-				<span class="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+				<span
+					class="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+				>
 					+{uniqueFiles.length - 3} more
 				</span>
 			{/if}
@@ -142,7 +150,9 @@
 		<div transition:slide={{ duration: 180 }}>
 			{#if isFileScan}
 				<!-- File-grouped view for SUMMARIZE_FILE / SUMMARIZE_ALL -->
-				<div class="max-h-96 divide-y divide-gray-100 overflow-y-auto border-t border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+				<div
+					class="max-h-96 divide-y divide-gray-100 overflow-y-auto border-t border-gray-100 dark:divide-gray-800 dark:border-gray-800"
+				>
 					{#each fileGroups() as group (group.filename)}
 						{@const Icon = fileIcon(group.filename)}
 						{@const isOpen = openFiles.has(group.filename)}
@@ -161,7 +171,9 @@
 									<span class="text-[11px] font-medium text-gray-700 dark:text-gray-300">
 										{shortFilename(group.filename)}
 									</span>
-									<span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+									<span
+										class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+									>
 										{group.chunks.length} chunk{group.chunks.length !== 1 ? "s" : ""}
 									</span>
 								</div>
@@ -173,13 +185,20 @@
 							</button>
 
 							{#if isOpen}
-								<div transition:slide={{ duration: 140 }} class="divide-y divide-gray-100 bg-gray-50/40 dark:divide-gray-800 dark:bg-gray-900/20">
+								<div
+									transition:slide={{ duration: 140 }}
+									class="divide-y divide-gray-100 bg-gray-50/40 dark:divide-gray-800 dark:bg-gray-900/20"
+								>
 									{#each group.chunks as chunk (chunk.id)}
 										<div class="px-4 py-2">
 											{#if chunk.pageNumber}
-												<span class="mb-1 block text-[10px] text-gray-400">Line {chunk.pageNumber}</span>
+												<span class="mb-1 block text-[10px] text-gray-400"
+													>Line {chunk.pageNumber}</span
+												>
 											{/if}
-											<p class="font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+											<p
+												class="font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400"
+											>
 												{truncate(chunk.text.trim(), 200)}
 											</p>
 										</div>
@@ -196,7 +215,8 @@
 						{@const count = tabCount(tab)}
 						{#if count > 0 || tab === "all"}
 							<button
-								class="flex-1 border-b-2 px-2 py-1.5 text-[11px] font-medium transition-colors {activeTab === tab
+								class="flex-1 border-b-2 px-2 py-1.5 text-[11px] font-medium transition-colors {activeTab ===
+								tab
 									? 'border-gray-700 bg-gray-50 dark:border-gray-300 dark:bg-gray-800/40'
 									: 'border-transparent text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}"
 								onclick={() => (activeTab = tab)}
@@ -217,14 +237,21 @@
 							<div class="flex items-center justify-between gap-2">
 								<div class="flex min-w-0 items-center gap-1.5">
 									<Icon class="size-3.5 flex-none text-gray-400" />
-									<span class="truncate text-[11px] font-medium text-gray-700 dark:text-gray-300" title={chunk.filename}>
+									<span
+										class="truncate text-[11px] font-medium text-gray-700 dark:text-gray-300"
+										title={chunk.filename}
+									>
 										{shortFilename(chunk.filename)}
 									</span>
 									{#if chunk.pageNumber}
 										<span class="text-[10px] text-gray-400">· Line {chunk.pageNumber}</span>
 									{/if}
 								</div>
-								<span class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[chunk.role]}">
+								<span
+									class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[
+										chunk.role
+									]}"
+								>
 									{roleLabel[chunk.role]}
 								</span>
 							</div>
@@ -232,7 +259,10 @@
 							<!-- Graph provenance label (chunks injected via BFS dependency-graph expansion) -->
 							{#if chunk.is_graph_expansion && chunk.expanded_from}
 								{@const shortQid = chunk.expanded_from.split("::").slice(-2).join("::")}
-								<span class="text-[10px] text-blue-500 dark:text-blue-400" title="Graph-expanded from {chunk.expanded_from}">
+								<span
+									class="text-[10px] text-blue-500 dark:text-blue-400"
+									title="Graph-expanded from {chunk.expanded_from}"
+								>
 									via {shortQid}
 								</span>
 							{/if}
@@ -243,7 +273,10 @@
 								{@const pct = (chunk.similarity * 100).toFixed(0)}
 								<div class="flex items-center gap-2">
 									<div class="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-										<div class="h-full rounded-full transition-all {style.bar}" style="width:{pct}%"></div>
+										<div
+											class="h-full rounded-full transition-all {style.bar}"
+											style="width:{pct}%"
+										></div>
 									</div>
 									<span class="w-7 text-right text-[10px] font-medium {style.label}">{pct}%</span>
 								</div>
@@ -252,7 +285,9 @@
 							{/if}
 
 							<!-- Text preview -->
-							<p class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+							<p
+								class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400"
+							>
 								{truncate(chunk.text.trim(), 160)}
 							</p>
 						</div>

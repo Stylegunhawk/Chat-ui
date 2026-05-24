@@ -3,7 +3,8 @@ import type { Endpoint } from "../endpoints/endpoints";
 import type { Conversation } from "$lib/types/Conversation";
 import type { Message } from "$lib/types/Message";
 import type { Assistant } from "$lib/types/Assistant";
-import type { RagFileMetadata } from "$lib/rag/client";
+import type { ChatFileChunk, RagFileMetadata } from "$lib/rag/client";
+import type { RAGClient } from "$lib/server/rag/client";
 
 export interface TextGenerationContext {
 	model: ProcessedModel;
@@ -21,6 +22,13 @@ export interface TextGenerationContext {
 	/** Inference provider preference: "auto", "fastest", "cheapest", or a specific provider name */
 	provider?: string;
 	ragFiles?: RagFileMetadata[];
+	ragContext?: {
+		engaged: boolean;
+		inventory: RagFileMetadata[];
+		ragClient: RAGClient;
+		chunksAccumulator: ChatFileChunk[];
+		criticRetriesUsed: number;
+	};
 	locals: App.Locals | undefined;
 	abortController: AbortController;
 }

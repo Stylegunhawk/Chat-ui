@@ -6,7 +6,6 @@
 
 import type { ChatFileChunk, RagFileMetadata } from "$lib/rag/client";
 import { type RagContextMessage } from "$lib/rag/context";
-import type { RagStrategy } from "$lib/server/rag/ragAgent";
 
 // Re-export for server usage
 export { isRagContextMessage } from "$lib/rag/context";
@@ -28,18 +27,8 @@ function formatUploadedFileLine(file: RagFileMetadata): string {
  */
 const MIN_SIMILARITY_SCORE = 0.45;
 
-/**
- * Context budget in chars.
- * - Simple queries (FILE_SEMANTIC, SEMANTIC_SEARCH, FILE_DEEP_DIVE): 4000 chars (~1000 tokens)
- * - Multi-file queries (HYBRID, FULL_CONTEXT): 8000 chars (~2000 tokens)
- */
-const CONTEXT_BUDGET_SIMPLE = 4000;
-const CONTEXT_BUDGET_LARGE = 8000;
-
-function getContextBudget(strategy?: RagStrategy): number {
-	if (strategy === "SUMMARIZE_ALL") return CONTEXT_BUDGET_LARGE;
-	return CONTEXT_BUDGET_SIMPLE;
-}
+// Single budget for tool-injected RAG context (~2000 tokens).
+const CONTEXT_BUDGET = 8000;
 
 // ============================================================================
 // HELPERS
@@ -95,7 +84,6 @@ export function buildFileListNote(files: RagFileMetadata[]): string {
  */
 export function buildRagContextMessage(
 	chunks: ChatFileChunk[],
-	strategy?: RagStrategy,
 	files?: RagFileMetadata[]
 ): RagContextMessage {
 	if (chunks.length === 0) {
@@ -131,7 +119,7 @@ export function buildRagContextMessage(
 	const sorted = [...scoredChunks].sort((a, b) => rolePriority[a.role] - rolePriority[b.role]);
 
 	// ── Step 3: Context budget cap ───────────────────────────────────────────
-	const MAX_CONTEXT_CHARS = getContextBudget(strategy);
+	const MAX_CONTEXT_CHARS = CONTEXT_BUDGET;
 	let budget = MAX_CONTEXT_CHARS;
 	const budgeted: ChatFileChunk[] = [];
 	for (const chunk of sorted) {

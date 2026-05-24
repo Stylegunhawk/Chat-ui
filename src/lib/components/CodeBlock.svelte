@@ -5,7 +5,12 @@
 	import PlayFilledAlt from "~icons/carbon/play-filled-alt";
 	import CarbonSidePanelOpen from "~icons/carbon/side-panel-open";
 	import EosIconsLoading from "~icons/eos-icons/loading";
-	import { artifactStore, TYPE_COLORS, TYPE_LABELS, type ArtifactType } from "$lib/stores/artifact.svelte";
+	import {
+		artifactStore,
+		TYPE_COLORS,
+		TYPE_LABELS,
+		type ArtifactType,
+	} from "$lib/stores/artifact.svelte";
 
 	interface Props {
 		code?: string;
@@ -62,7 +67,9 @@
 	>
 		{#if artifactType}
 			<span
-				class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[artifactType] ?? 'bg-gray-500'}"
+				class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[
+					artifactType
+				] ?? 'bg-gray-500'}"
 			>
 				{TYPE_LABELS[artifactType] ?? lang}
 			</span>

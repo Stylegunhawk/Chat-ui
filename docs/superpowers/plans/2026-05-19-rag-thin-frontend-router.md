@@ -12,22 +12,23 @@ teh **Goal:** Replace the frontend's LLM planner + strategy engine with a 3-buck
 
 ## File Map
 
-| Action | Path | Responsibility |
-|--------|------|---------------|
-| **Modify** | `src/lib/rag/client.ts` | Add `expanded_from?: string` and `similarity: number \| null` to `ChatFileChunk` |
-| **Rewrite** | `src/lib/server/rag/ragAgent.ts` | 3-bucket classifier + simplified execute; remove LLM planner |
-| **Delete** | `src/lib/server/rag/ragPlanner.ts` | LLM planner — no longer needed |
-| **Delete** | `src/lib/server/rag/ragAgentLegacy.ts` | Regex planner — logic inlined into new ragAgent.ts |
-| **Modify** | `src/lib/server/rag/contextBuilder.ts` | Update strategy names in budget calc; add `expanded_from` to `<coderef>` block |
-| **Modify** | `src/lib/components/chat/RagReferenceCard.svelte` | Provenance label + null-score guard for graph-expanded dependency chunks |
-| **Modify** | `src/routes/conversation/[id]/+server.ts` | Remove `generateFromDefaultEndpoint` import and `locals` arg from `ragAgent.run()` |
-| **Create** | `src/lib/server/rag/ragAgent.spec.ts` | Unit tests for the 3-bucket classifier |
+| Action      | Path                                              | Responsibility                                                                     |
+| ----------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Modify**  | `src/lib/rag/client.ts`                           | Add `expanded_from?: string` and `similarity: number \| null` to `ChatFileChunk`   |
+| **Rewrite** | `src/lib/server/rag/ragAgent.ts`                  | 3-bucket classifier + simplified execute; remove LLM planner                       |
+| **Delete**  | `src/lib/server/rag/ragPlanner.ts`                | LLM planner — no longer needed                                                     |
+| **Delete**  | `src/lib/server/rag/ragAgentLegacy.ts`            | Regex planner — logic inlined into new ragAgent.ts                                 |
+| **Modify**  | `src/lib/server/rag/contextBuilder.ts`            | Update strategy names in budget calc; add `expanded_from` to `<coderef>` block     |
+| **Modify**  | `src/lib/components/chat/RagReferenceCard.svelte` | Provenance label + null-score guard for graph-expanded dependency chunks           |
+| **Modify**  | `src/routes/conversation/[id]/+server.ts`         | Remove `generateFromDefaultEndpoint` import and `locals` arg from `ragAgent.run()` |
+| **Create**  | `src/lib/server/rag/ragAgent.spec.ts`             | Unit tests for the 3-bucket classifier                                             |
 
 ---
 
 ## Task 1: Update shared `ChatFileChunk` type
 
 **Files:**
+
 - Modify: `src/lib/rag/client.ts:17-27`
 
 - [ ] **Step 1.1: Write failing test**
@@ -108,6 +109,7 @@ git commit -m "feat(rag): add expanded_from and nullable similarity to ChatFileC
 ## Task 2: Rewrite `ragAgent.ts` — 3-bucket classifier
 
 **Files:**
+
 - Rewrite: `src/lib/server/rag/ragAgent.ts`
 
 - [ ] **Step 2.1: Add classifier unit tests to `ragAgent.spec.ts`**
@@ -444,6 +446,7 @@ git commit -m "feat(rag): replace LLM planner with 3-bucket regex classifier"
 ## Task 3: Delete `ragPlanner.ts` and `ragAgentLegacy.ts`
 
 **Files:**
+
 - Delete: `src/lib/server/rag/ragPlanner.ts`
 - Delete: `src/lib/server/rag/ragAgentLegacy.ts`
 
@@ -482,6 +485,7 @@ git commit -m "chore(rag): delete LLM planner and legacy regex planner (inlined 
 ## Task 4: Update `contextBuilder.ts` — new strategy names + `expanded_from`
 
 **Files:**
+
 - Modify: `src/lib/server/rag/contextBuilder.ts`
 
 - [ ] **Step 4.1: Update `getContextBudget` for new strategy names**
@@ -551,6 +555,7 @@ git commit -m "feat(rag): update contextBuilder for new strategy names and expan
 ## Task 5: Update `+server.ts` — remove LLM planner wiring
 
 **Files:**
+
 - Modify: `src/routes/conversation/[id]/+server.ts:324-362`
 
 - [ ] **Step 5.1: Remove `generateFromDefaultEndpoint` import and update `RagAgent` construction**
@@ -558,14 +563,14 @@ git commit -m "feat(rag): update contextBuilder for new strategy names and expan
 In `+server.ts`, find the RAG block (around line 324). Make these two changes:
 
 **Remove** the `generateFromDefaultEndpoint` import line from the dynamic import block:
+
 ```typescript
 // REMOVE this line:
-const { generateFromDefaultEndpoint } = await import(
-	"$lib/server/generateFromDefaultEndpoint"
-);
+const { generateFromDefaultEndpoint } = await import("$lib/server/generateFromDefaultEndpoint");
 ```
 
 **Replace** the RagAgent construction and `run()` call:
+
 ```typescript
 // Before:
 const ragAgent = new RagAgent(ragClient, generateFromDefaultEndpoint);
@@ -607,6 +612,7 @@ git commit -m "feat(rag): remove LLM planner dependency from conversation server
 ## Task 6: Update `RagReferenceCard.svelte` — provenance label for graph-expanded chunks
 
 **Files:**
+
 - Modify: `src/lib/components/chat/RagReferenceCard.svelte`
 
 - [ ] **Step 6.1: Add null-score guard and provenance label to chunk rows**
@@ -615,48 +621,54 @@ In `RagReferenceCard.svelte`, replace the chunk row block (lines 146–174) with
 
 ```svelte
 <div class="flex flex-col gap-1.5 px-3 py-2.5">
-    <!-- File name + role badge -->
-    <div class="flex items-center justify-between gap-2">
-        <div class="flex min-w-0 items-center gap-1.5">
-            <Icon class="size-3.5 flex-none text-gray-400" />
-            <span class="truncate text-[11px] font-medium text-gray-700 dark:text-gray-300" title={chunk.filename}>
-                {shortFilename(chunk.filename)}
-            </span>
-            {#if chunk.pageNumber}
-                <span class="text-[10px] text-gray-400">· Line {chunk.pageNumber}</span>
-            {/if}
-        </div>
-        <span class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[chunk.role]}">
-            {roleLabel[chunk.role]}
-        </span>
-    </div>
+	<!-- File name + role badge -->
+	<div class="flex items-center justify-between gap-2">
+		<div class="flex min-w-0 items-center gap-1.5">
+			<Icon class="size-3.5 flex-none text-gray-400" />
+			<span
+				class="truncate text-[11px] font-medium text-gray-700 dark:text-gray-300"
+				title={chunk.filename}
+			>
+				{shortFilename(chunk.filename)}
+			</span>
+			{#if chunk.pageNumber}
+				<span class="text-[10px] text-gray-400">· Line {chunk.pageNumber}</span>
+			{/if}
+		</div>
+		<span class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[chunk.role]}">
+			{roleLabel[chunk.role]}
+		</span>
+	</div>
 
-    <!-- Graph provenance label (dependency chunks only) -->
-    {#if chunk.role === "dependency" && chunk.expanded_from}
-        {@const shortQid = chunk.expanded_from.split("::").slice(-2).join("::")}
-        <span class="text-[10px] text-blue-500 dark:text-blue-400" title="Graph-expanded from {chunk.expanded_from}">
-            via {shortQid}
-        </span>
-    {/if}
+	<!-- Graph provenance label (dependency chunks only) -->
+	{#if chunk.role === "dependency" && chunk.expanded_from}
+		{@const shortQid = chunk.expanded_from.split("::").slice(-2).join("::")}
+		<span
+			class="text-[10px] text-blue-500 dark:text-blue-400"
+			title="Graph-expanded from {chunk.expanded_from}"
+		>
+			via {shortQid}
+		</span>
+	{/if}
 
-    <!-- Relevance bar (hidden for graph-expanded chunks with null score) -->
-    {#if chunk.similarity !== null && chunk.similarity !== undefined}
-        {@const style = scoreStyle(chunk.similarity)}
-        {@const pct = (chunk.similarity * 100).toFixed(0)}
-        <div class="flex items-center gap-2">
-            <div class="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                <div class="h-full rounded-full transition-all {style.bar}" style="width:{pct}%"></div>
-            </div>
-            <span class="w-7 text-right text-[10px] font-medium {style.label}">{pct}%</span>
-        </div>
-    {:else}
-        <span class="text-[10px] text-gray-400 dark:text-gray-500">graph expanded</span>
-    {/if}
+	<!-- Relevance bar (hidden for graph-expanded chunks with null score) -->
+	{#if chunk.similarity !== null && chunk.similarity !== undefined}
+		{@const style = scoreStyle(chunk.similarity)}
+		{@const pct = (chunk.similarity * 100).toFixed(0)}
+		<div class="flex items-center gap-2">
+			<div class="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+				<div class="h-full rounded-full transition-all {style.bar}" style="width:{pct}%"></div>
+			</div>
+			<span class="w-7 text-right text-[10px] font-medium {style.label}">{pct}%</span>
+		</div>
+	{:else}
+		<span class="text-[10px] text-gray-400 dark:text-gray-500">graph expanded</span>
+	{/if}
 
-    <!-- Text preview -->
-    <p class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-        {truncate(chunk.text.trim(), 160)}
-    </p>
+	<!-- Text preview -->
+	<p class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+		{truncate(chunk.text.trim(), 160)}
+	</p>
 </div>
 ```
 
@@ -665,6 +677,7 @@ In `RagReferenceCard.svelte`, replace the chunk row block (lines 146–174) with
 The old code had `{@const style = scoreStyle(chunk.similarity ?? 1)}` and `{@const pct = ...}` at the top of each chunk row. These are now inside the conditional. Verify the top of the `{#each}` block in the modified file no longer has those `@const` declarations.
 
 The `{#each}` block header should now be just:
+
 ```svelte
 {#each activeChunks as chunk (chunk.id)}
     {@const Icon = fileIcon(chunk.filename)}
@@ -706,13 +719,13 @@ npm run dev
 
 Open `http://localhost:5173`. With a conversation that has uploaded files, test these queries manually:
 
-| Query | Expected strategy (console log) | Expected UI |
-|-------|----------------------------------|-------------|
-| `what files do I have?` | `NO_RAG` | No Sources card |
-| `summarize auth.py` | `SUMMARIZE_FILE` | Sources card, all chunks from auth.py |
-| `summarize all my files` | `SUMMARIZE_ALL` | Sources card, chunks from every file |
-| `how does authentication work?` | `SEARCH` | Sources card with entry + dependency chunks |
-| `what does auth.py import from utils.ts?` | `SEARCH` (not HYBRID) | Sources card, backend graph expansion handles it |
+| Query                                     | Expected strategy (console log) | Expected UI                                      |
+| ----------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| `what files do I have?`                   | `NO_RAG`                        | No Sources card                                  |
+| `summarize auth.py`                       | `SUMMARIZE_FILE`                | Sources card, all chunks from auth.py            |
+| `summarize all my files`                  | `SUMMARIZE_ALL`                 | Sources card, chunks from every file             |
+| `how does authentication work?`           | `SEARCH`                        | Sources card with entry + dependency chunks      |
+| `what does auth.py import from utils.ts?` | `SEARCH` (not HYBRID)           | Sources card, backend graph expansion handles it |
 
 - [ ] **Step 7.3: Verify provenance label renders for dependency chunks**
 
@@ -738,6 +751,7 @@ git commit -m "feat(rag): thin frontend router — delegate intelligence to back
 ## Self-Review
 
 **Spec coverage check:**
+
 - ✅ Remove LLM planner entirely → Task 2 rewrites `ragAgent.ts`, Task 3 deletes `ragPlanner.ts`
 - ✅ 3-bucket regex classifier (META / SUMMARIZE / SEARCH) → Task 2 `classify()`
 - ✅ META answers from file list, no backend call → `NO_RAG` strategy
@@ -751,6 +765,7 @@ git commit -m "feat(rag): thin frontend router — delegate intelligence to back
 **Placeholder scan:** None found.
 
 **Type consistency check:**
+
 - `RagStrategy` in `ragAgent.ts` uses `"SUMMARIZE_FILE" | "SUMMARIZE_ALL"` — matches `contextBuilder.ts` `getContextBudget` check (`"SUMMARIZE_ALL"`), `RagReferenceCard.svelte` does not use strategy directly.
 - `FileExecutionPlan.action` is `"DEEP_DIVE"` only in the new agent — matches `execute()` which calls `getFileChunks` for all filePlans regardless of action value.
 - `chunk.similarity` is `number | null` in `ChatFileChunk` — `contextBuilder.ts` uses `?? 1` fallback (unchanged), `RagReferenceCard.svelte` checks `!== null` before rendering bar.

@@ -127,7 +127,7 @@
 
 	$effect(() => {
 		void page.url.pathname;
-		if (!page.url.pathname.startsWith('/conversation/')) {
+		if (!page.url.pathname.startsWith("/conversation/")) {
 			artifactStore.reset();
 		}
 	});
@@ -263,8 +263,12 @@
 
 <div
 	class="fixed grid h-full w-screen grid-cols-1 grid-rows-[auto,1fr] overflow-hidden text-smd {artifactStore.panelOpen
-		? (!isNavCollapsed ? 'md:grid-cols-[290px,1fr,45vw]' : 'md:grid-cols-[0px,1fr,45vw]')
-		: (!isNavCollapsed ? 'md:grid-cols-[290px,1fr]' : 'md:grid-cols-[0px,1fr]')} transition-[300ms] [transition-property:grid-template-columns] dark:text-gray-300 md:grid-rows-[1fr]"
+		? !isNavCollapsed
+			? 'md:grid-cols-[290px,1fr,45vw]'
+			: 'md:grid-cols-[0px,1fr,45vw]'
+		: !isNavCollapsed
+			? 'md:grid-cols-[290px,1fr]'
+			: 'md:grid-cols-[0px,1fr]'} transition-[300ms] [transition-property:grid-template-columns] dark:text-gray-300 md:grid-rows-[1fr]"
 >
 	<ExpandNavigation
 		isCollapsed={isNavCollapsed}

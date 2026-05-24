@@ -52,9 +52,7 @@
 
 	// Backend requires at least language OR code_context to resolve a language.
 	// Intent alone is rejected ("language required"). Intent only boosts relevance.
-	let canSubmit = $derived(
-		!loading && (language.trim() !== "" || codeContext !== "")
-	);
+	let canSubmit = $derived(!loading && (language.trim() !== "" || codeContext !== ""));
 
 	let loadingHint = $derived(
 		loadingElapsed >= 15
@@ -157,9 +155,7 @@
 
 			if (!result.success) {
 				const rawMsg =
-					result.data && "message" in result.data
-						? result.data.message
-						: result.message || "";
+					result.data && "message" in result.data ? result.data.message : result.message || "";
 
 				if (rawMsg.includes("pack data missing")) {
 					error = `The "${language || "requested"}" / ${skillLevel.toLowerCase()} combination isn't available yet. Try Python + Beginner, or adjust your selection.`;
@@ -339,8 +335,9 @@
 							onclick={() => (showContext = !showContext)}
 						>
 							<LucideFileCode class="size-3" />
-							{blockCount} code block{blockCount !== 1 ? "s" : ""} from conversation
-							({(codeContext.length / 1000).toFixed(1)}k chars)
+							{blockCount} code block{blockCount !== 1 ? "s" : ""} from conversation ({(
+								codeContext.length / 1000
+							).toFixed(1)}k chars)
 							<LucideChevronDown
 								class="size-3 transition-transform {showContext ? 'rotate-180' : ''}"
 							/>
@@ -352,8 +349,8 @@
 							>
 								<pre class="whitespace-pre-wrap">{codeContext.slice(0, 2000)}{codeContext.length >
 									2000
-									? "\n...truncated for preview"
-									: ""}</pre>
+										? "\n...truncated for preview"
+										: ""}</pre>
 							</div>
 						{/if}
 					{/if}
@@ -461,10 +458,7 @@
 								{loadingHint}
 							</p>
 							{#if loadingElapsed >= 3}
-								<p
-									in:fade
-									class="text-[11px] tabular-nums text-gray-300 dark:text-gray-600"
-								>
+								<p in:fade class="text-[11px] tabular-nums text-gray-300 dark:text-gray-600">
 									{loadingElapsed}s
 								</p>
 							{/if}

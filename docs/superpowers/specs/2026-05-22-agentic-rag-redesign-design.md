@@ -13,8 +13,8 @@
 The current RAG layer in `chat-ui` classifies every user query into one of four buckets (`NO_RAG`, `SUMMARIZE_FILE`, `SUMMARIZE_ALL`, `SEARCH`) using regex patterns in `ragAgent.ts:77`. This frontend classifier:
 
 1. **Duplicates work the backend already does better.** The DevForge backend has Phase 12A query intelligence (intent classification, query expansion, semantic caching), hybrid retrieval (BM25 + vector with RRF fusion), cross-encoder reranking, code-graph BFS expansion, and deterministic context shaping. The frontend regex is a dumber layer sitting in front of a smarter system.
-2. **Misses natural phrasings.** Queries like *"give me the `authenticate` function from auth.py"* don't match any pattern and fall through to `SEARCH` without `fileIds` — so the backend searches across all tenant files instead of scoping to `auth.py`.
-3. **Leaks prior retrieval into the current turn.** Prior `<coderef>` blocks remain in conversation history. When the new turn's retrieval is weak, the LLM falls back to *stale* chunks from a previous summary request and answers from those.
+2. **Misses natural phrasings.** Queries like _"give me the `authenticate` function from auth.py"_ don't match any pattern and fall through to `SEARCH` without `fileIds` — so the backend searches across all tenant files instead of scoping to `auth.py`.
+3. **Leaks prior retrieval into the current turn.** Prior `<coderef>` blocks remain in conversation history. When the new turn's retrieval is weak, the LLM falls back to _stale_ chunks from a previous summary request and answers from those.
 4. **Wastes the backend's `rewriteQuery` parameter.** `ragAgent.ts:191` passes `rewriteQuery: plan.searchQuery` — literally the raw user query. The backend would honor an actual rewrite; we never send one.
 5. **Wastes the backend's `fileIds` whitelist.** Never set, so retrieval always runs over the whole tenant index even when the user named a file.
 
@@ -25,6 +25,7 @@ This document specifies a replacement: an agentic RAG layer that exposes retriev
 ## 2. Goals & Non-Goals
 
 ### Goals
+
 - Replace the regex classifier with LLM-driven tool calls (`retrieve_docs`, `get_file_chunks`).
 - Actually use the backend's `fileIds` and `rewriteQuery` parameters.
 - Add a deterministic critic that re-retrieves on weak results (capped retries).
@@ -34,6 +35,7 @@ This document specifies a replacement: an agentic RAG layer that exposes retriev
 - Bound worst-case latency.
 
 ### Non-goals
+
 - Changing the backend. The contract (`/api/v1/rag/*` endpoints) is frozen.
 - Changing chunking, embedding, or reranking. Backend owns these.
 - New UI affordances beyond the inventory text already required.
@@ -46,13 +48,13 @@ This document specifies a replacement: an agentic RAG layer that exposes retriev
 
 The five endpoints the redesign uses, in their canonical Phase 15 forms:
 
-| Endpoint | Method | Purpose | Key inputs |
-|---|---|---|---|
-| `/api/v1/rag/chunk/semanticSearchForChat` | POST | Hybrid search + rerank + graph expansion | `userQuery`, `rewriteQuery?`, `fileIds?`, `top_k`, `messageId` |
-| `/api/v1/rag/file/{id}/chunks` | GET | Sequential chunks for one file | `limit`, `offset` |
-| `/api/v1/rag/files` | GET | Tenant file inventory | — |
-| `/api/v1/rag/file/upload` | POST | Upload (untouched by this redesign) | multipart |
-| `/api/v1/rag/file/{id}` | DELETE | Hard delete (untouched) | — |
+| Endpoint                                  | Method | Purpose                                  | Key inputs                                                     |
+| ----------------------------------------- | ------ | ---------------------------------------- | -------------------------------------------------------------- |
+| `/api/v1/rag/chunk/semanticSearchForChat` | POST   | Hybrid search + rerank + graph expansion | `userQuery`, `rewriteQuery?`, `fileIds?`, `top_k`, `messageId` |
+| `/api/v1/rag/file/{id}/chunks`            | GET    | Sequential chunks for one file           | `limit`, `offset`                                              |
+| `/api/v1/rag/files`                       | GET    | Tenant file inventory                    | —                                                              |
+| `/api/v1/rag/file/upload`                 | POST   | Upload (untouched by this redesign)      | multipart                                                      |
+| `/api/v1/rag/file/{id}`                   | DELETE | Hard delete (untouched)                  | —                                                              |
 
 The chunk response shape includes `similarity`, `role: "entry" | "dependency" | "supporting"`, `is_graph_expansion`, and `expanded_from` — all of which the critic uses to evaluate retrieval quality.
 
@@ -66,19 +68,19 @@ The chunk response shape includes `similarity`, `role: "entry" | "dependency" | 
 
 The tool schema exposes parameters in LLM-friendly form. The `ragTools.ts` handler maps them to the backend's `SemanticSearchRequest`:
 
-| Tool param (LLM-facing) | Backend field | Notes |
-|---|---|---|
-| `query` | `userQuery` | Renamed for LLM clarity ("query" is more intuitive). |
-| `rewriteQuery` | `rewriteQuery` | Pass-through. |
-| `fileIds` | `fileIds` | Pass-through. Awaiting backend wiring (§3.1). |
-| `top_k` | `top_k` | Pass-through. |
-| *(not exposed to LLM)* | `messageId` | **Server-generated** by the handler via `crypto.randomUUID()` per call. Not in the tool schema. |
+| Tool param (LLM-facing) | Backend field  | Notes                                                                                           |
+| ----------------------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| `query`                 | `userQuery`    | Renamed for LLM clarity ("query" is more intuitive).                                            |
+| `rewriteQuery`          | `rewriteQuery` | Pass-through.                                                                                   |
+| `fileIds`               | `fileIds`      | Pass-through. Awaiting backend wiring (§3.1).                                                   |
+| `top_k`                 | `top_k`        | Pass-through.                                                                                   |
+| _(not exposed to LLM)_  | `messageId`    | **Server-generated** by the handler via `crypto.randomUUID()` per call. Not in the tool schema. |
 
 ### 3.3 Backend behavior notes for the critic
 
 - `get_file_chunks` returns chunks with `similarity: 1.0` hardcoded (sequential reads aren't ranked). The critic will always PASS on these — by design, since sequential reads are user-intent-driven, not relevance-driven.
 - `similarity` on `retrieve_docs` results is the pre-rerank vector score (post-sigmoid normalization), not the rerank score — `ChunkResult.rerank_score` is a dataclass attribute, not in metadata, so the router doesn't surface it. The critic's `MIN_SIMILARITY_FLOOR = 0.55` is calibrated against this pre-rerank signal.
-- The backend's semantic cache key does not include `fileIds`. A cached response for `"authenticate function"` without `fileIds` could be returned for the same query *with* `fileIds`. This is a backend concern flagged for the `rag_resolve` branch — frontend treats cache as opaque.
+- The backend's semantic cache key does not include `fileIds`. A cached response for `"authenticate function"` without `fileIds` could be returned for the same query _with_ `fileIds`. This is a backend concern flagged for the `rag_resolve` branch — frontend treats cache as opaque.
 
 ---
 
@@ -121,15 +123,15 @@ ragEnabled toggle (per-conversation, MongoDB)
 
 ### 4.3 Key changes vs current
 
-| Current | After |
-|---|---|
-| 4-bucket regex classifier (`ragAgent.ts`) | Binary gate + LLM tool calling |
-| One retrieval per turn, server-decides | LLM decides; up to 2 retrievals + 2 retries per turn |
-| `fileIds` never passed | LLM passes `fileIds` from inventory |
-| `rewriteQuery === userQuery` | LLM writes `rewriteQuery`; critic reformulates on retry |
-| Prior `<coderef>` blocks stay in history | Stripped every turn |
-| No critic | Deterministic critic (similarity floor + role mix) |
-| `retrieve_docs` mentioned in prompt but unused | `retrieve_docs` actually called by the LLM |
+| Current                                        | After                                                   |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| 4-bucket regex classifier (`ragAgent.ts`)      | Binary gate + LLM tool calling                          |
+| One retrieval per turn, server-decides         | LLM decides; up to 2 retrievals + 2 retries per turn    |
+| `fileIds` never passed                         | LLM passes `fileIds` from inventory                     |
+| `rewriteQuery === userQuery`                   | LLM writes `rewriteQuery`; critic reformulates on retry |
+| Prior `<coderef>` blocks stay in history       | Stripped every turn                                     |
+| No critic                                      | Deterministic critic (similarity floor + role mix)      |
+| `retrieve_docs` mentioned in prompt but unused | `retrieve_docs` actually called by the LLM              |
 
 ---
 
@@ -137,30 +139,30 @@ ragEnabled toggle (per-conversation, MongoDB)
 
 ### 5.1 New modules — `src/lib/server/rag/`
 
-| File | Lines (est.) | Responsibility |
-|---|---|---|
-| `ragGate.ts` | ~60 | Pure binary "engage RAG this turn?" function. |
-| `historyHygiene.ts` | ~50 | `stripPriorRagBlocks(messages)` — idempotent, mutation-safe. |
-| `ragCritic.ts` | ~80 | `evaluate(chunks)` + `reformulateQuery(...)`. Deterministic verdict + LLM-backed rewrite. |
-| `ragTools.ts` | ~120 | OpenAI tool schemas + handlers for `retrieve_docs` and `get_file_chunks`. Handler responsibilities: (a) map `query → userQuery`; (b) auto-generate `messageId` via `crypto.randomUUID()`; (c) validate `fileIds` against inventory and drop unknown ones with a warning; (d) clamp `top_k`/`limit` defensively; (e) format chunks into `<rag_result>` blocks via `contextBuilder`; (f) push chunks to the per-turn `ragChunksAccumulator`. |
-| `inventoryInjector.ts` | ~40 | Builds the `## Uploaded Files` system-prompt block. |
+| File                   | Lines (est.) | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ragGate.ts`           | ~60          | Pure binary "engage RAG this turn?" function.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `historyHygiene.ts`    | ~50          | `stripPriorRagBlocks(messages)` — idempotent, mutation-safe.                                                                                                                                                                                                                                                                                                                                                                               |
+| `ragCritic.ts`         | ~80          | `evaluate(chunks)` + `reformulateQuery(...)`. Deterministic verdict + LLM-backed rewrite.                                                                                                                                                                                                                                                                                                                                                  |
+| `ragTools.ts`          | ~120         | OpenAI tool schemas + handlers for `retrieve_docs` and `get_file_chunks`. Handler responsibilities: (a) map `query → userQuery`; (b) auto-generate `messageId` via `crypto.randomUUID()`; (c) validate `fileIds` against inventory and drop unknown ones with a warning; (d) clamp `top_k`/`limit` defensively; (e) format chunks into `<rag_result>` blocks via `contextBuilder`; (f) push chunks to the per-turn `ragChunksAccumulator`. |
+| `inventoryInjector.ts` | ~40          | Builds the `## Uploaded Files` system-prompt block.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### 5.2 Modified files
 
-| File | Changes |
-|---|---|
-| `src/routes/conversation/[id]/+server.ts:320-410` | Replace RAG injection block. New flow: strip → toggle check → gate → inventory → tool loop. |
-| `src/lib/server/textGeneration/mcp/runMcpFlow.ts` | Filter RAG tools out of `oaTools` when `ragEnabled === false`. Hook critic between tool result and LLM. |
-| `src/lib/server/textGeneration/utils/toolPrompt.ts` | Rewrite `retrieve_docs` block. Drop `rerank_docs` mention. |
-| `src/lib/server/rag/contextBuilder.ts` | Shrunk: single budget value, drop `RagStrategy` import, move `buildFileListNote` to inventoryInjector. |
-| `src/lib/server/rag/ragRouter.ts` | Shrunk: keep `findFileMatch()`, drop all pattern arrays + `inferActiveFile()`. ~30 lines remain. |
+| File                                                | Changes                                                                                                 |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `src/routes/conversation/[id]/+server.ts:320-410`   | Replace RAG injection block. New flow: strip → toggle check → gate → inventory → tool loop.             |
+| `src/lib/server/textGeneration/mcp/runMcpFlow.ts`   | Filter RAG tools out of `oaTools` when `ragEnabled === false`. Hook critic between tool result and LLM. |
+| `src/lib/server/textGeneration/utils/toolPrompt.ts` | Rewrite `retrieve_docs` block. Drop `rerank_docs` mention.                                              |
+| `src/lib/server/rag/contextBuilder.ts`              | Shrunk: single budget value, drop `RagStrategy` import, move `buildFileListNote` to inventoryInjector.  |
+| `src/lib/server/rag/ragRouter.ts`                   | Shrunk: keep `findFileMatch()`, drop all pattern arrays + `inferActiveFile()`. ~30 lines remain.        |
 
 ### 5.3 Deleted
 
-| File | Reason |
-|---|---|
-| `src/lib/server/rag/ragAgent.ts` (248 lines) | Replaced by tool-loop + critic. |
-| `src/lib/server/rag/ragAgent.spec.ts` (128 lines) | New unit tests cover the replacement. |
+| File                                                  | Reason                                                |
+| ----------------------------------------------------- | ----------------------------------------------------- |
+| `src/lib/server/rag/ragAgent.ts` (248 lines)          | Replaced by tool-loop + critic.                       |
+| `src/lib/server/rag/ragAgent.spec.ts` (128 lines)     | New unit tests cover the replacement.                 |
 | `src/lib/server/rag/historyCompressor.ts` (128 lines) | Only consumer was `ragAgent`. Verify before deleting. |
 
 ### 5.4 Untouched
@@ -216,41 +218,42 @@ Pure functions (gate, hygiene, inventory) have zero cross-dependencies. RAGClien
 
 ```json
 {
-  "type": "function",
-  "function": {
-    "name": "retrieve_docs",
-    "description": "Search the user's uploaded files (PDFs, code, docs) for content relevant to a query. The backend performs hybrid search (BM25 + vector) with reranking and code-graph expansion. Returns the most relevant chunks with file/line metadata. Use this whenever you need actual content from an uploaded file — do NOT guess. Use fileIds to scope when the user names a specific file; omit fileIds for broad questions.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "The user's natural-language question, as-is."
-        },
-        "rewriteQuery": {
-          "type": "string",
-          "description": "OPTIONAL but RECOMMENDED. Your own optimized search query — keywords, function names, technical terms."
-        },
-        "fileIds": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "OPTIONAL whitelist of file IDs to scope the search. Look IDs up in the `## Uploaded Files` inventory."
-        },
-        "top_k": {
-          "type": "integer",
-          "default": 5,
-          "minimum": 1,
-          "maximum": 20,
-          "description": "Number of chunks to return. Start with 5. Use 10+ for summarization."
-        }
-      },
-      "required": ["query"]
-    }
-  }
+	"type": "function",
+	"function": {
+		"name": "retrieve_docs",
+		"description": "Search the user's uploaded files (PDFs, code, docs) for content relevant to a query. The backend performs hybrid search (BM25 + vector) with reranking and code-graph expansion. Returns the most relevant chunks with file/line metadata. Use this whenever you need actual content from an uploaded file — do NOT guess. Use fileIds to scope when the user names a specific file; omit fileIds for broad questions.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"query": {
+					"type": "string",
+					"description": "The user's natural-language question, as-is."
+				},
+				"rewriteQuery": {
+					"type": "string",
+					"description": "OPTIONAL but RECOMMENDED. Your own optimized search query — keywords, function names, technical terms."
+				},
+				"fileIds": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "OPTIONAL whitelist of file IDs to scope the search. Look IDs up in the `## Uploaded Files` inventory."
+				},
+				"top_k": {
+					"type": "integer",
+					"default": 5,
+					"minimum": 1,
+					"maximum": 20,
+					"description": "Number of chunks to return. Start with 5. Use 10+ for summarization."
+				}
+			},
+			"required": ["query"]
+		}
+	}
 }
 ```
 
 **Server-side parameters not exposed to the LLM:**
+
 - `messageId` — auto-generated per call by `ragTools.ts` via `crypto.randomUUID()`. The backend requires this on every `SemanticSearchRequest`; the LLM should never see or set it.
 - The schema's `query` param is mapped to the backend's `userQuery` field by the handler.
 
@@ -258,20 +261,20 @@ Pure functions (gate, hygiene, inventory) have zero cross-dependencies. RAGClien
 
 ```json
 {
-  "type": "function",
-  "function": {
-    "name": "get_file_chunks",
-    "description": "Read a specific uploaded file sequentially, chunk by chunk. Use for SUMMARIZATION or full-file reading. Unlike retrieve_docs (semantic search), this returns chunks in original document order.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "fileId":  { "type": "string", "description": "File ID from the inventory." },
-        "limit":   { "type": "integer", "default": 8, "minimum": 1, "maximum": 30 },
-        "offset":  { "type": "integer", "default": 0, "minimum": 0 }
-      },
-      "required": ["fileId"]
-    }
-  }
+	"type": "function",
+	"function": {
+		"name": "get_file_chunks",
+		"description": "Read a specific uploaded file sequentially, chunk by chunk. Use for SUMMARIZATION or full-file reading. Unlike retrieve_docs (semantic search), this returns chunks in original document order.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"fileId": { "type": "string", "description": "File ID from the inventory." },
+				"limit": { "type": "integer", "default": 8, "minimum": 1, "maximum": 30 },
+				"offset": { "type": "integer", "default": 0, "minimum": 0 }
+			},
+			"required": ["fileId"]
+		}
+	}
 }
 ```
 
@@ -279,7 +282,7 @@ Pure functions (gate, hygiene, inventory) have zero cross-dependencies. RAGClien
 
 Tool results are returned to the LLM as a single text block wrapped in `<rag_result>` so it can be distinguished from system-injected context and cleanly stripped next turn by `historyHygiene`:
 
-```xml
+````xml
 <rag_result query="authenticate function" fileIds="[f_auth]" top_k="10">
   <coderef id="..." index="1">
     File: auth.py
@@ -298,7 +301,7 @@ Tool results are returned to the LLM as a single text block wrapped in `<rag_res
     ...
   </coderef>
 </rag_result>
-```
+````
 
 ### 6.4 System prompt — inventory block
 
@@ -409,41 +412,42 @@ Same model as chat (cheap due to tiny token count).
 
 ## 8. Error Handling
 
-| Failure | Handling | User behavior |
-|---|---|---|
-| `semanticSearch` 401 | One retry with refreshed JWT; if still 401 → tool returns `{ error }` | LLM tells user to re-login |
-| `semanticSearch` 404 (no files) | Returns `{ chunks: [] }` (existing) | LLM tells user no files |
-| `semanticSearch` 5xx / timeout | Tool returns `{ error }`. No exception propagated. | LLM acknowledges, falls back |
-| `getFileChunks` failure | Same pattern | Same |
-| Reformulator LLM fails | Templated fallback | Invisible — retry still happens |
-| `listFiles()` fails | Use frontend-only file list (existing fallback at `+server.ts:347`) | RAG still works with thinner metadata |
-| Mid-stream toggle off | Affects next turn only | No impact on current turn |
-| LLM passes unknown `fileIds` | Drop them; log warning; if all unknown return `{ error }` | LLM gets error, can retry |
-| Unready files (`finishEmbedding=false`) | Inventory shows `(processing — not searchable yet)`; tool rejects `fileIds` pointing at them | LLM tells user to wait |
-| Toggle ON, zero files | Gate returns false | Normal chat |
-| Toggle ON, "what files do I have?" | Gate=false but inventory still injected; LLM answers from text | Same UX as today's NO_RAG |
+| Failure                                 | Handling                                                                                     | User behavior                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `semanticSearch` 401                    | One retry with refreshed JWT; if still 401 → tool returns `{ error }`                        | LLM tells user to re-login            |
+| `semanticSearch` 404 (no files)         | Returns `{ chunks: [] }` (existing)                                                          | LLM tells user no files               |
+| `semanticSearch` 5xx / timeout          | Tool returns `{ error }`. No exception propagated.                                           | LLM acknowledges, falls back          |
+| `getFileChunks` failure                 | Same pattern                                                                                 | Same                                  |
+| Reformulator LLM fails                  | Templated fallback                                                                           | Invisible — retry still happens       |
+| `listFiles()` fails                     | Use frontend-only file list (existing fallback at `+server.ts:347`)                          | RAG still works with thinner metadata |
+| Mid-stream toggle off                   | Affects next turn only                                                                       | No impact on current turn             |
+| LLM passes unknown `fileIds`            | Drop them; log warning; if all unknown return `{ error }`                                    | LLM gets error, can retry             |
+| Unready files (`finishEmbedding=false`) | Inventory shows `(processing — not searchable yet)`; tool rejects `fileIds` pointing at them | LLM tells user to wait                |
+| Toggle ON, zero files                   | Gate returns false                                                                           | Normal chat                           |
+| Toggle ON, "what files do I have?"      | Gate=false but inventory still injected; LLM answers from text                               | Same UX as today's NO_RAG             |
 
 ---
 
 ## 9. History Hygiene
 
 ```ts
-const RAG_BLOCK_PATTERN       = /^# Retrieved Document Context[\s\S]*?\n---\n\n/;
-const RAG_RESULT_TAG_PATTERN  = /<rag_result\b[\s\S]*?<\/rag_result>\s*/g;
-const FILE_INVENTORY_PATTERN  = /^## Uploaded Files\n[\s\S]*?\n\n/;
-const FILE_LIST_NOTE_PATTERN  = /^## Uploaded Files\nThe user has \d+ uploaded file\(s\)[\s\S]*?\n\n/;
+const RAG_BLOCK_PATTERN = /^# Retrieved Document Context[\s\S]*?\n---\n\n/;
+const RAG_RESULT_TAG_PATTERN = /<rag_result\b[\s\S]*?<\/rag_result>\s*/g;
+const FILE_INVENTORY_PATTERN = /^## Uploaded Files\n[\s\S]*?\n\n/;
+const FILE_LIST_NOTE_PATTERN =
+	/^## Uploaded Files\nThe user has \d+ uploaded file\(s\)[\s\S]*?\n\n/;
 
 function stripPriorRagBlocks(messages: Message[]): Message[] {
-  return messages.map((m, idx) => {
-    if (idx === messages.length - 1) return m;   // never strip current turn
-    if (m.from !== "user" || typeof m.content !== "string") return m;
-    let content = m.content;
-    content = content.replace(RAG_BLOCK_PATTERN, "");
-    content = content.replace(FILE_INVENTORY_PATTERN, "");
-    content = content.replace(FILE_LIST_NOTE_PATTERN, "");
-    content = content.replace(RAG_RESULT_TAG_PATTERN, "");
-    return content === m.content ? m : { ...m, content };
-  });
+	return messages.map((m, idx) => {
+		if (idx === messages.length - 1) return m; // never strip current turn
+		if (m.from !== "user" || typeof m.content !== "string") return m;
+		let content = m.content;
+		content = content.replace(RAG_BLOCK_PATTERN, "");
+		content = content.replace(FILE_INVENTORY_PATTERN, "");
+		content = content.replace(FILE_LIST_NOTE_PATTERN, "");
+		content = content.replace(RAG_RESULT_TAG_PATTERN, "");
+		return content === m.content ? m : { ...m, content };
+	});
 }
 ```
 
@@ -463,7 +467,7 @@ ragChunksAccumulator.push(...resultChunks);
 
 // at end of turn:
 messageToWriteTo.ragChunks = dedupeByChunkId(ragChunksAccumulator);
-messageToWriteTo.ragStrategy = "AGENTIC";   // single new strategy label
+messageToWriteTo.ragStrategy = "AGENTIC"; // single new strategy label
 ```
 
 `RagReferenceCard.svelte` reads `ragChunks` unchanged — citations render identically.
@@ -472,14 +476,14 @@ messageToWriteTo.ragStrategy = "AGENTIC";   // single new strategy label
 
 ## 11. Data Flow Cases
 
-| Case | Gate | Tool calls | Critic | Latency vs today |
-|---|---|---|---|---|
-| Greeting (`"hi"`) | false | 0 | — | Same (~0) |
-| Bug case (`"give me authenticate from auth.py"`) | true | 1 `retrieve_docs` w/ fileIds | PASS | +1 LLM round-trip |
-| Vague (`"thing that handles login"`) | true | 1 + retry | RETRY → PASS | +1 LLM + +1 backend |
-| Cross-file (`"how does login flow"`) | true | 2 parallel `retrieve_docs` | PASS×2 | +1 LLM round-trip |
-| Toggle OFF | n/a | 0 (tools filtered) | — | Same |
-| Summary (`"summarize all my files"`) | true | N `get_file_chunks` | — | +1 LLM round-trip |
+| Case                                             | Gate  | Tool calls                   | Critic       | Latency vs today    |
+| ------------------------------------------------ | ----- | ---------------------------- | ------------ | ------------------- |
+| Greeting (`"hi"`)                                | false | 0                            | —            | Same (~0)           |
+| Bug case (`"give me authenticate from auth.py"`) | true  | 1 `retrieve_docs` w/ fileIds | PASS         | +1 LLM round-trip   |
+| Vague (`"thing that handles login"`)             | true  | 1 + retry                    | RETRY → PASS | +1 LLM + +1 backend |
+| Cross-file (`"how does login flow"`)             | true  | 2 parallel `retrieve_docs`   | PASS×2       | +1 LLM round-trip   |
+| Toggle OFF                                       | n/a   | 0 (tools filtered)           | —            | Same                |
+| Summary (`"summarize all my files"`)             | true  | N `get_file_chunks`          | —            | +1 LLM round-trip   |
 
 ---
 
@@ -487,20 +491,20 @@ messageToWriteTo.ragStrategy = "AGENTIC";   // single new strategy label
 
 ### 12.1 Unit (Vitest, server workspace)
 
-| File | Cases |
-|---|---|
-| `ragGate.spec.ts` | ~12 — engage decisions across query types |
-| `historyHygiene.spec.ts` | ~8 — strip patterns, idempotency, last-message protection |
-| `ragCritic.spec.ts` | ~10 — verdict matrix |
-| `inventoryInjector.spec.ts` | ~5 — file inventory rendering |
-| `ragTools.spec.ts` | ~8 — handler validation, error pass-through, dedup |
+| File                        | Cases                                                     |
+| --------------------------- | --------------------------------------------------------- |
+| `ragGate.spec.ts`           | ~12 — engage decisions across query types                 |
+| `historyHygiene.spec.ts`    | ~8 — strip patterns, idempotency, last-message protection |
+| `ragCritic.spec.ts`         | ~10 — verdict matrix                                      |
+| `inventoryInjector.spec.ts` | ~5 — file inventory rendering                             |
+| `ragTools.spec.ts`          | ~8 — handler validation, error pass-through, dedup        |
 
 ### 12.2 Integration
 
-| File | Cases |
-|---|---|
+| File                       | Cases                       |
+| -------------------------- | --------------------------- |
 | `conversation.rag.spec.ts` | 5 — one per Section 11 case |
-| `ragCritic.retry.spec.ts` | retry flow + per-turn cap |
+| `ragCritic.retry.spec.ts`  | retry flow + per-turn cap   |
 
 ### 12.3 Regression queries
 
@@ -573,7 +577,7 @@ Single env var `AGENTIC_RAG` (default `0` until commit 6). One server-side check
 
 ## 15. Acceptance Criteria
 
-1. The original bug query (*"give me the `authenticate` function from auth.py"*) returns the actual function content from `auth.py`, not stale chunks from a prior summary. **Verification gated on backend `rag_resolve` shipping `file_ids` filtering (§3.1)** — until then, the frontend will pass `fileIds` but scoping will silently no-op.
+1. The original bug query (_"give me the `authenticate` function from auth.py"_) returns the actual function content from `auth.py`, not stale chunks from a prior summary. **Verification gated on backend `rag_resolve` shipping `file_ids` filtering (§3.1)** — until then, the frontend will pass `fileIds` but scoping will silently no-op.
 2. All five regression queries in §12.3 pass snapshot tests.
 3. `ragEnabled=false` removes RAG tools from the LLM's tool list (verified by snapshotting `oaTools`).
 4. Citation UI continues to render correctly across all five cases.

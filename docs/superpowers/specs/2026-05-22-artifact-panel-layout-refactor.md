@@ -1,4 +1,5 @@
 # Artifact Panel Layout Refactor — Design Spec
+
 **Date:** 2026-05-22
 **Status:** Approved
 **Stack:** SvelteKit 2 / Svelte 5 / TailwindCSS
@@ -32,13 +33,13 @@ The existing `transition-[grid-template-columns]` animation already on the layou
 
 ### Ownership
 
-| Concern | Owner |
-|---|---|
-| Artifact state (list, active, panelOpen) | `artifact.svelte.ts` store |
-| Panel column in grid | `+layout.svelte` |
-| Panel content | `ArtifactPanel.svelte` |
-| "Open in Panel" button | `CodeBlock.svelte` → `artifactStore.pushArtifact()` |
-| Auto-open via tool call | `ArtifactOpener.svelte` → `artifactStore.pushArtifact()` |
+| Concern                                  | Owner                                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| Artifact state (list, active, panelOpen) | `artifact.svelte.ts` store                               |
+| Panel column in grid                     | `+layout.svelte`                                         |
+| Panel content                            | `ArtifactPanel.svelte`                                   |
+| "Open in Panel" button                   | `CodeBlock.svelte` → `artifactStore.pushArtifact()`      |
+| Auto-open via tool call                  | `ArtifactOpener.svelte` → `artifactStore.pushArtifact()` |
 
 ---
 
@@ -73,9 +74,12 @@ import ArtifactPanel from "$lib/components/chat/ArtifactPanel.svelte";
 
 ```svelte
 {artifactStore.panelOpen
-  ? (!isNavCollapsed ? 'md:grid-cols-[290px,1fr,45vw]' : 'md:grid-cols-[0px,1fr,45vw]')
-  : (!isNavCollapsed ? 'md:grid-cols-[290px,1fr]'      : 'md:grid-cols-[0px,1fr]')
-}
+	? !isNavCollapsed
+		? "md:grid-cols-[290px,1fr,45vw]"
+		: "md:grid-cols-[0px,1fr,45vw]"
+	: !isNavCollapsed
+		? "md:grid-cols-[290px,1fr]"
+		: "md:grid-cols-[0px,1fr]"}
 ```
 
 The rest of the grid class string (`fixed grid h-full w-screen grid-rows-[auto,1fr] overflow-hidden ... md:grid-rows-[1fr]`) is unchanged.
@@ -84,9 +88,9 @@ The rest of the grid class string (`fixed grid h-full w-screen grid-rows-[auto,1
 
 ```svelte
 {#if artifactStore.panelOpen}
-  <div class="hidden h-full overflow-hidden md:flex md:flex-col">
-    <ArtifactPanel />
-  </div>
+	<div class="hidden h-full overflow-hidden md:flex md:flex-col">
+		<ArtifactPanel />
+	</div>
 {/if}
 ```
 
@@ -94,10 +98,10 @@ The rest of the grid class string (`fixed grid h-full w-screen grid-rows-[auto,1
 
 ```ts
 $effect(() => {
-  void page.url.pathname; // reactive dependency
-  if (!page.url.pathname.startsWith('/conversation/')) {
-    artifactStore.reset();
-  }
+	void page.url.pathname; // reactive dependency
+	if (!page.url.pathname.startsWith("/conversation/")) {
+		artifactStore.reset();
+	}
 });
 ```
 
@@ -106,6 +110,7 @@ $effect(() => {
 ### `src/routes/conversation/[id]/+page.svelte`
 
 **Remove:**
+
 - `import ArtifactPanel from "$lib/components/chat/ArtifactPanel.svelte";`
 - `import { artifactStore } from "$lib/stores/artifact.svelte";`
 - The `{#if artifactStore.panelOpen}` fixed-overlay block (the entire `<div class="fixed ...">` block)
@@ -123,17 +128,20 @@ $effect(() => {
 ## Behavior
 
 ### Desktop (≥ md)
+
 - Panel closed: chat fills `1fr`, full width
 - Panel opens: grid transitions to `[nav][1fr][45vw]`; chat narrows, panel slides in from right
 - Panel closes: grid transitions back to `[nav][1fr]`; chat expands to full width
 - Transition: animated via existing `transition-[grid-template-columns]`
 
 ### Mobile (< md)
+
 - Panel column is hidden (`hidden ... md:flex`)
 - On mobile, `ArtifactPanel` is not rendered (the `{#if}` block and `hidden` class together suppress it)
 - Mobile artifact viewing is out of scope for this refactor — the "Open in Panel" button is a future enhancement for mobile
 
 ### Navigation guard
+
 - Navigating to any page other than `/conversation/*` resets the artifact store
 - This prevents stale artifacts from reappearing when returning to a conversation
 

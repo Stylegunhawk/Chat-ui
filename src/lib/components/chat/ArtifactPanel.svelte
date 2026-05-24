@@ -28,9 +28,7 @@
 		return content
 			.split("\n")
 			.filter((l) => l.trim())
-			.map((line) =>
-				line.split(",").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1"))
-			);
+			.map((line) => line.split(",").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1")));
 	}
 
 	function handleSandboxError(errs: { message: string; stack?: string }[]) {
@@ -56,7 +54,9 @@
 		>
 			<div class="flex min-w-0 items-center gap-2">
 				<span
-					class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[artifact.type] ?? 'bg-gray-500'}"
+					class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[
+						artifact.type
+					] ?? 'bg-gray-500'}"
 				>
 					{TYPE_LABELS[artifact.type] ?? artifact.type}
 				</span>
@@ -128,26 +128,33 @@
 		<div class="min-h-0 flex-1 overflow-hidden">
 			{#if viewMode === "code"}
 				<div class="scrollbar-custom h-full overflow-auto bg-gray-950 p-4">
-					<pre class="font-mono text-xs leading-relaxed text-gray-200 whitespace-pre">{artifact.content}</pre>
+					<pre
+						class="whitespace-pre font-mono text-xs leading-relaxed text-gray-200">{artifact.content}</pre>
 				</div>
 			{:else if artifact.type === "text/html" || artifact.type === "image/svg+xml"}
 				<ArtifactSandbox content={artifact.content} onerror={handleSandboxError} />
-
 			{:else if artifact.type === "text/x-react"}
-				<ArtifactSandbox content={artifact.content} type={artifact.type} onerror={handleSandboxError} />
-
+				<ArtifactSandbox
+					content={artifact.content}
+					type={artifact.type}
+					onerror={handleSandboxError}
+				/>
 			{:else if artifact.type === "text/x-flutter"}
 				<div class="flex h-full flex-col">
-					<div class="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-400">
+					<div
+						class="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-400"
+					>
 						Flutter web requires a Dart runtime — showing source. Copy to
-						<a href="https://dartpad.dev" target="_blank" rel="noopener" class="underline">DartPad</a>
+						<a href="https://dartpad.dev" target="_blank" rel="noopener" class="underline"
+							>DartPad</a
+						>
 						to run.
 					</div>
 					<div class="scrollbar-custom min-h-0 flex-1 overflow-auto p-4">
-						<pre class="whitespace-pre font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200">{artifact.content}</pre>
+						<pre
+							class="whitespace-pre font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200">{artifact.content}</pre>
 					</div>
 				</div>
-
 			{:else if artifact.type === "text/x-mermaid"}
 				{#if browser}
 					{#await import("@friendofsvelte/mermaid") then { Mermaid }}
@@ -156,17 +163,18 @@
 						</div>
 					{/await}
 				{/if}
-
 			{:else if artifact.type === "application/json"}
 				<div class="scrollbar-custom h-full overflow-auto p-4">
-					<pre class="font-mono text-xs text-gray-800 dark:text-gray-200">{formatJson(artifact.content)}</pre>
+					<pre class="font-mono text-xs text-gray-800 dark:text-gray-200">{formatJson(
+							artifact.content
+						)}</pre>
 				</div>
-
 			{:else if artifact.type === "text/markdown"}
-				<div class="scrollbar-custom prose prose-sm dark:prose-invert h-full max-w-none overflow-auto p-4">
+				<div
+					class="scrollbar-custom prose prose-sm h-full max-w-none overflow-auto p-4 dark:prose-invert"
+				>
 					<MarkdownRenderer content={artifact.content} />
 				</div>
-
 			{:else if artifact.type === "text/csv"}
 				{@const rows = parseCsvRows(artifact.content)}
 				{@const headers = rows[0] ?? []}
@@ -186,7 +194,11 @@
 						</thead>
 						<tbody>
 							{#each dataRows as row, i}
-								<tr class={i % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}>
+								<tr
+									class={i % 2 === 0
+										? "bg-white dark:bg-gray-900"
+										: "bg-gray-50 dark:bg-gray-800/50"}
+								>
 									{#each headers as _header, j}
 										<td
 											class="border border-gray-200 px-3 py-2 text-gray-600 dark:border-gray-700 dark:text-gray-400"

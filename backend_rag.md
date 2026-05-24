@@ -1,5 +1,5 @@
-
 #Backend Rag : Implementaion :
+
 # retrieve_docs - RAG Document Retrieval Tool
 
 **Version:** 15.3 (Strict Multi-Tenancy)  
@@ -14,11 +14,13 @@
 The `retrieve_docs` tool provides intelligent semantic document search with **Phase 12A Query Intelligence** and **Phase 15 Multi-Tenancy** enhancements.
 
 **Phase 15 Features (NEW!):**
+
 - 🆕 **Strict Multi-Tenancy** - Isolated collections via `X-User-ID` header.
 - 🆕 **Frozen API Contract** - Guaranteed semantic priority and orphan filtering.
 - 🆕 **Safety Valve Chunking** - Auto-split large AST entities (>2000 chars) for model safety.
 
 **Phase 12A Features:**
+
 - ✅ **3-Tier Intent Classification** - Auto-detect code_search, explain, debug, general intents
 - ✅ **Intent-Aware Query Expansion** - Generate 2-3 related queries per intent
 - ✅ **Semantic Caching by Intent** - Cache similar queries for 10-50ms responses
@@ -26,16 +28,19 @@ The `retrieve_docs` tool provides intelligent semantic document search with **Ph
 - 🆕 **Analytics Endpoints** - Track intent distribution, expansion quality, cache hits
 
 **Phase 13 Features (NEW!):**
+
 - 🆕 **Deterministic Context Shaping** - Post-retrieval deduplication & ordering
 - 🆕 **Role-Based Context** - Explicit `entry`, `dependency`, `supporting` roles
 - 🆕 **Qualified ID Deduplication** - Handles overloaded functions & classes correctly
 
 **Phase 11 Features:**
+
 - ✅ Two-stage retrieval (Vector search → Cross-encoder reranking)
 - ✅ Code-aware score boosting
 - ✅ Sigmoid normalized scores
 
 **Phase 10.1 Features:**
+
 - ✅ Async ingestion via Celery task queue (optional)
 - ✅ Tree-sitter AST parsing for code files (Python, JS, TS)
 - ✅ Code dependency graph with BFS traversal
@@ -50,11 +55,13 @@ The `retrieve_docs` tool provides intelligent semantic document search with **Ph
 ### Code-Aware Chunking
 
 **Supported Languages:**
+
 - Python (`.py`) - Functions, classes, docstrings, imports
 - JavaScript (`.js`, `.jsx`) - Functions, classes, JSDoc, imports
 - TypeScript (`.ts`, `.tsx`) - Functions, classes, JSDoc, imports
 
 **AST Extraction:**
+
 ```python
 # Input: utils.py
 def add(a, b):
@@ -77,11 +84,13 @@ def add(a, b):
 ### Code Dependency Graph
 
 **Graph Structure:**
+
 - **Nodes:** Qualified IDs (`file::entity` format)
 - **Edges:** Function calls and imports
 - **Traversal:** BFS with configurable depth
 
 **Context Expansion Example:**
+
 ```python
 Query: "authentication function"
 Initial Match: auth.py::authenticate
@@ -110,15 +119,17 @@ curl -X POST http://localhost:8001/api/rag/ingest-async \
 ```
 
 **Response:**
+
 ```json
 {
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "PENDING",
-  "message": "Ingestion queued"
+	"task_id": "550e8400-e29b-41d4-a716-446655440000",
+	"status": "PENDING",
+	"message": "Ingestion queued"
 }
 ```
 
 **Check Status:**
+
 ```bash
 curl http://localhost:8001/api/rag/task/{task_id}
 ```
@@ -131,14 +142,14 @@ The RAG system is fully integrated with Lobe Chat's TypeScript data contracts vi
 
 ### New Integration Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/rag/file/upload` | `POST` | Upload files with MIME detection and async ingestion |
-| `/api/v1/rag/file/{id}` | `GET` | Poll processing status until `finishEmbedding: true` |
-| `/api/v1/rag/file/{id}/chunks` | `GET` | [Sequential chunk retrieval](get_file_chunks_api.md) |
-| `/api/v1/rag/chunk/semanticSearchForChat` | `POST` | Primary search endpoint for Lobe Chat sessions |
-| `/api/v1/rag/file/{id}` | `DELETE` | Removes file, vectors, and metadata |
-| `/api/v1/rag/message/{id}/query` | `DELETE` | Cleans up RAG queries for the specified message |
+| Endpoint                                  | Method   | Description                                          |
+| ----------------------------------------- | -------- | ---------------------------------------------------- |
+| `/api/v1/rag/file/upload`                 | `POST`   | Upload files with MIME detection and async ingestion |
+| `/api/v1/rag/file/{id}`                   | `GET`    | Poll processing status until `finishEmbedding: true` |
+| `/api/v1/rag/file/{id}/chunks`            | `GET`    | [Sequential chunk retrieval](get_file_chunks_api.md) |
+| `/api/v1/rag/chunk/semanticSearchForChat` | `POST`   | Primary search endpoint for Lobe Chat sessions       |
+| `/api/v1/rag/file/{id}`                   | `DELETE` | Removes file, vectors, and metadata                  |
+| `/api/v1/rag/message/{id}/query`          | `DELETE` | Cleans up RAG queries for the specified message      |
 
 ### Integration Architecture
 
@@ -150,27 +161,29 @@ The RAG system is fully integrated with Lobe Chat's TypeScript data contracts vi
 
 ## Parameters
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `query` | string | ✅ Yes | - | Search query for semantic retrieval |
-| `file_paths` | array[string] | No | `[]` | Documents to ingest before searching |
-| `top_k` | integer | No | `5` | Number of results to return (1-50) |
-| `embed_model` | string | No | `"nomic-embed-text"` | Embedding model to use |
-| `include_context` | boolean | No | `false` | Enable graph-based context expansion |
+| Parameter         | Type          | Required | Default              | Description                          |
+| ----------------- | ------------- | -------- | -------------------- | ------------------------------------ |
+| `query`           | string        | ✅ Yes   | -                    | Search query for semantic retrieval  |
+| `file_paths`      | array[string] | No       | `[]`                 | Documents to ingest before searching |
+| `top_k`           | integer       | No       | `5`                  | Number of results to return (1-50)   |
+| `embed_model`     | string        | No       | `"nomic-embed-text"` | Embedding model to use               |
+| `include_context` | boolean       | No       | `false`              | Enable graph-based context expansion |
 
 ### New in Phase 10.1
 
 **`include_context`** - Enable code graph expansion:
+
 - Finds related functions via calls/imports
 - BFS traversal (default depth: 2)
 - Returns extended context with related code
 
 **Example:**
+
 ```json
 {
-  "query": "authentication logic",
-  "include_context": true,
-  "top_k": 3
+	"query": "authentication logic",
+	"include_context": true,
+	"top_k": 3
 }
 ```
 
@@ -207,37 +220,38 @@ curl -X POST http://localhost:8001/api/gateway \
 ```
 
 **Response (with expansion):**
+
 ```json
 {
-  "success": true,
-  "data": {
-    "results": [
-      {
-        "content": "def validate_token(token): ...",
-        "score": 0.92,
-        "metadata": {
-          "source": "auth.py",
-          "chunk_type": "function",
-          "name": "validate_token",
-          "role": "entry"
-        }
-      },
-      {
-        "content": "def decode_jwt(token): ...",
-        "score": null,  // Graph-expanded (no direct similarity)
-        "metadata": {
-          "source": "utils.py",
-          "chunk_type": "function",
-          "name": "decode_jwt",
-          "expanded_from": "auth.py::validate_token",
-          "role": "dependency"
-        }
-      }
-    ],
-    "query": "JWT token validation",
-    "expanded": true,
-    "expansion_count": 3
-  }
+	"success": true,
+	"data": {
+		"results": [
+			{
+				"content": "def validate_token(token): ...",
+				"score": 0.92,
+				"metadata": {
+					"source": "auth.py",
+					"chunk_type": "function",
+					"name": "validate_token",
+					"role": "entry"
+				}
+			},
+			{
+				"content": "def decode_jwt(token): ...",
+				"score": null, // Graph-expanded (no direct similarity)
+				"metadata": {
+					"source": "utils.py",
+					"chunk_type": "function",
+					"name": "decode_jwt",
+					"expanded_from": "auth.py::validate_token",
+					"role": "dependency"
+				}
+			}
+		],
+		"query": "JWT token validation",
+		"expanded": true,
+		"expansion_count": 3
+	}
 }
 ```
 
@@ -329,11 +343,13 @@ Return Results with Extended Context
 **Structure:** `file::entity`
 
 **Examples:**
+
 - `auth.py::authenticate`
 - `utils.py::User.login`
 - `middleware.ts::validateRequest`
 
 **Why Double Colon?**
+
 - Handles Windows paths (`C:\src\file.py`)
 - Consistent with Rust/C++ syntax
 - Easy to parse and validate
@@ -342,12 +358,14 @@ Return Results with Extended Context
 
 **Algorithm:** Breadth-First Search (BFS)  
 **Configuration:**
+
 ```python
 GRAPH_CONTEXT_DEPTH = 2      # Max traversal depth
 GRAPH_MAX_CONTEXT_CHUNKS = 3 # Max related chunks
 ```
 
 **Example:**
+
 ```
 Query: "authentication"
 Match: auth.py::authenticate
@@ -364,17 +382,19 @@ Result: 4 chunks (1 initial + 3 related)
 ### Test-Source Linking
 
 **Automatic Detection:**
+
 - `test_*.py` → `*.py`
 - `*_test.py` → `*.py`
 - `*.spec.ts` → `*.ts`
 - `*.test.js` → `*.js`
 
 **Metadata Enhancement:**
+
 ```json
 {
-  "source": "auth.py",
-  "name": "authenticate",
-  "test_files": ["test_auth.py", "auth_test.py"]
+	"source": "auth.py",
+	"name": "authenticate",
+	"test_files": ["test_auth.py", "auth_test.py"]
 }
 ```
 
@@ -384,25 +404,25 @@ Result: 4 chunks (1 initial + 3 related)
 
 ### Phase 10.1 Additions
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Celery** | 5.3.4 | Async task queue |
-| **Redis** | 5.0.1 | Celery broker/backend |
-| **Tree-sitter** | 0.25.2 | AST parsing |
-| **tree-sitter-python** | 0.25.0 | Python grammar |
-| **tree-sitter-javascript** | 0.25.0 | JS grammar |
-| **tree-sitter-typescript** | 0.23.2 | TS grammar |
+| Technology                 | Version | Purpose               |
+| -------------------------- | ------- | --------------------- |
+| **Celery**                 | 5.3.4   | Async task queue      |
+| **Redis**                  | 5.0.1   | Celery broker/backend |
+| **Tree-sitter**            | 0.25.2  | AST parsing           |
+| **tree-sitter-python**     | 0.25.0  | Python grammar        |
+| **tree-sitter-javascript** | 0.25.0  | JS grammar            |
+| **tree-sitter-typescript** | 0.23.2  | TS grammar            |
 
 ### Existing Stack
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| ChromaDB | 1.3.5 | Local vector store |
-| Qdrant Client | 1.16.1 | Cloud vector store |
-| LangChain | 1.0.3 | Embeddings and chains |
-| sentence-transformers | 5.1.2 | Reranking |
-| PyPDF | 6.4.0 | PDF parsing |
-| python-docx | Latest | DOCX parsing |
+| Technology            | Version | Purpose               |
+| --------------------- | ------- | --------------------- |
+| ChromaDB              | 1.3.5   | Local vector store    |
+| Qdrant Client         | 1.16.1  | Cloud vector store    |
+| LangChain             | 1.0.3   | Embeddings and chains |
+| sentence-transformers | 5.1.2   | Reranking             |
+| PyPDF                 | 6.4.0   | PDF parsing           |
+| python-docx           | Latest  | DOCX parsing          |
 
 ---
 
@@ -441,10 +461,10 @@ CELERY_TASK_SOFT_TIME_LIMIT = 300  # 5 minutes
 
 ```json
 {
-  "query": "How does authentication middleware work?",
-  "file_paths": ["src/middleware.ts"],
-  "include_context": true,
-  "top_k": 5
+	"query": "How does authentication middleware work?",
+	"file_paths": ["src/middleware.ts"],
+	"include_context": true,
+	"top_k": 5
 }
 ```
 
@@ -454,8 +474,8 @@ CELERY_TASK_SOFT_TIME_LIMIT = 300  # 5 minutes
 
 ```json
 {
-  "query": "authentication test cases",
-  "file_paths": ["tests/test_auth.py", "src/auth.py"]
+	"query": "authentication test cases",
+	"file_paths": ["tests/test_auth.py", "src/auth.py"]
 }
 ```
 
@@ -465,8 +485,8 @@ CELERY_TASK_SOFT_TIME_LIMIT = 300  # 5 minutes
 
 ```json
 {
-  "query": "database connection",
-  "include_context": true
+	"query": "database connection",
+	"include_context": true
 }
 ```
 
@@ -490,13 +510,13 @@ POST /rag/ingest-async
 
 ## Performance (Updated)
 
-| Operation | Time | Notes |
-|-----------|------|-------|
-| Code file ingestion (1 .py) | 1-2s | With AST parsing |
-| Text file ingestion (1 .md) | 500ms-1s | Standard chunking |
-| Search query | <500ms | With caching |
-| Graph expansion | +100-200ms | BFS traversal |
-| Async task queue | Instant | Non-blocking |
+| Operation                   | Time       | Notes             |
+| --------------------------- | ---------- | ----------------- |
+| Code file ingestion (1 .py) | 1-2s       | With AST parsing  |
+| Text file ingestion (1 .md) | 500ms-1s   | Standard chunking |
+| Search query                | <500ms     | With caching      |
+| Graph expansion             | +100-200ms | BFS traversal     |
+| Async task queue            | Instant    | Non-blocking      |
 
 ---
 
@@ -504,19 +524,19 @@ POST /rag/ingest-async
 
 ### File Locations
 
-| Component | Path | Responsibility |
-|-----------|------|----------------|
-| RAGAgent | `src/agents/rag/agent.py` | Orchestration, graph ownership |
-| CodeGraph | `src/agents/rag/graph/code_graph.py` | In-memory dependency graph |
-| CodeChunker | `src/agents/rag/chunking/code_chunker.py` | Tree-sitter AST parsing |
-| TextChunker | `src/agents/rag/chunking/text_chunker.py` | Text fallback chunking |
-| TestLinker | `src/agents/rag/linking/test_linker.py` | Test-source linking |
-| BaseVectorStore | `src/storage/base_store.py` | Vector store abstraction |
-| ChromaVectorStore | `src/storage/chroma_store.py` | ChromaDB implementation |
-| Redis Store | `src/storage/redis_file_store.py` | Metadata persistence and state tracking |
-| API (Lobe Chat) | `src/api/routers/rag.py` | Frontend-compliant integration router |
-| API (Legacy) | `src/api/routers/__init__.py` | Original MCP and analytics endpoints |
-| Celery Tasks | `src/workers/tasks/rag_tasks.py` | Async ingestion tasks |
+| Component         | Path                                      | Responsibility                          |
+| ----------------- | ----------------------------------------- | --------------------------------------- |
+| RAGAgent          | `src/agents/rag/agent.py`                 | Orchestration, graph ownership          |
+| CodeGraph         | `src/agents/rag/graph/code_graph.py`      | In-memory dependency graph              |
+| CodeChunker       | `src/agents/rag/chunking/code_chunker.py` | Tree-sitter AST parsing                 |
+| TextChunker       | `src/agents/rag/chunking/text_chunker.py` | Text fallback chunking                  |
+| TestLinker        | `src/agents/rag/linking/test_linker.py`   | Test-source linking                     |
+| BaseVectorStore   | `src/storage/base_store.py`               | Vector store abstraction                |
+| ChromaVectorStore | `src/storage/chroma_store.py`             | ChromaDB implementation                 |
+| Redis Store       | `src/storage/redis_file_store.py`         | Metadata persistence and state tracking |
+| API (Lobe Chat)   | `src/api/routers/rag.py`                  | Frontend-compliant integration router   |
+| API (Legacy)      | `src/api/routers/__init__.py`             | Original MCP and analytics endpoints    |
+| Celery Tasks      | `src/workers/tasks/rag_tasks.py`          | Async ingestion tasks                   |
 
 ---
 
@@ -526,15 +546,16 @@ POST /rag/ingest-async
 
 ```json
 {
-  "task_id": "abc123",
-  "status": "FAILURE",
-  "error": "File not found: src/missing.py"
+	"task_id": "abc123",
+	"status": "FAILURE",
+	"error": "File not found: src/missing.py"
 }
 ```
 
 ### AST Parsing Fallback
 
 If Tree-sitter parsing fails, automatically falls back to text chunking:
+
 ```
 [WARNING] AST parsing failed for auth.py: syntax error
 [INFO] Falling back to text chunking for auth.py
@@ -569,14 +590,16 @@ If Tree-sitter parsing fails, automatically falls back to text chunking:
 
 ---
 
-## Related Tools & Documentation  
+## Related Tools & Documentation
 
 **Tools:**
+
 - `rerank_docs` - Standalone document reranking
 - `refine_prompt` - Optimize search queries (use `rag` domain)
 - `generate_cheatsheet` - Generate documentation cheat sheets
 
 **Documentation:**
+
 - [RAG Architecture](../rag_architecture.md) - Architecture rules and patterns
 - [Integration Flow](../rag_integration_flow.md) - Complete data flow
 - [API Reference](../../README.md) - Full API documentation
@@ -626,6 +649,7 @@ curl http://localhost:8001/api/rag/task/{task_id}
 
 ⚠️ CANONICAL FOR FRONTEND (PHASE 15 ONLY)
 The following endpoints are the ONLY ones used by Lobe Chat:
+
 - /api/v1/rag/file/upload
 - /api/v1/rag/file/{id}
 - /api/v1/rag/chunk/semanticSearchForChat
@@ -633,17 +657,13 @@ The following endpoints are the ONLY ones used by Lobe Chat:
 
 All other endpoints are legacy or internal tools.
 
-
-
-
 **Last Updated:** February 26, 2026  
 **Version:** 15.3 (Phase 15.3 Complete)  
 **Maintainer:** DevForge Team  
 **Feedback:** Create an issue in the repository
 
-
-
 ==
+
 # rerank_docs - Document Reranking Tool
 
 **Tool Name:** `rerank_docs`  
@@ -658,10 +678,12 @@ All other endpoints are legacy or internal tools.
 The `rerank_docs` tool improves search result quality by re-scoring retrieved documents using a Cross-Encoder model. **Phase 15** ensures this works seamlessly within localized tenant collections.
 
 **Phase 15 Integration:**
+
 - Reranks results within tenant-specific vector stores.
 - Ensures `semanticSearchForChat` maintains top-tier precision across all users.
 
 **Phase 11 Features:**
+
 - Cross-Encoder based reranking (ms-marco-MiniLM-L-6-v2)
 - Sigmoid score normalization [0, 1]
 - Code-aware boosting (functions 1.2x, classes 1.15x)
@@ -682,11 +704,11 @@ The `rerank_docs` tool improves search result quality by re-scoring retrieved do
 
 ## Parameters
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `query` | string | ✅ Yes | - | User query for relevance scoring |
-| `documents` | array[string] | ✅ Yes | - | List of documents to rerank |
-| `top_k` | integer | No | `5` | Number of top results to return |
+| Parameter   | Type          | Required | Default | Description                      |
+| ----------- | ------------- | -------- | ------- | -------------------------------- |
+| `query`     | string        | ✅ Yes   | -       | User query for relevance scoring |
+| `documents` | array[string] | ✅ Yes   | -       | List of documents to rerank      |
+| `top_k`     | integer       | No       | `5`     | Number of top results to return  |
 
 ---
 
@@ -739,23 +761,24 @@ curl -X POST http://localhost:8001/api/gateway \
 ```
 
 **Response:**
+
 ```json
 {
-  "success": true,
-  "data": {
-    "reranked_docs": [
-      {
-        "text": "JWT tokens are commonly used for auth...",
-        "score": 0.92
-      },
-      {
-        "text": "Express.js provides middleware for authentication...",
-        "score": 0.87
-      }
-    ],
-    "original_count": 4,
-    "returned_count": 2
-  }
+	"success": true,
+	"data": {
+		"reranked_docs": [
+			{
+				"text": "JWT tokens are commonly used for auth...",
+				"score": 0.92
+			},
+			{
+				"text": "Express.js provides middleware for authentication...",
+				"score": 0.87
+			}
+		],
+		"original_count": 4,
+		"returned_count": 2
+	}
 }
 ```
 
@@ -776,6 +799,7 @@ curl -X POST http://localhost:8001/api/gateway \
 ```
 
 The RAG pipeline automatically:
+
 1. Retrieves top-10 from vector store
 2. Reranks using Cross-Encoder
 3. Returns best 10 after reranking
@@ -785,11 +809,13 @@ The RAG pipeline automatically:
 ## Lobe Chat Usage
 
 ### Standalone
+
 ```
 "Rerank these search results for the query 'machine learning basics'"
 ```
 
 ### With RAG (Automatic)
+
 ```
 "Search documentation for deployment instructions"
 # Reranking applied automatically
@@ -802,12 +828,14 @@ The RAG pipeline automatically:
 **Model:** `cross-encoder/ms-marco-MiniLM-L-6-v2`
 
 **Characteristics:**
+
 - **Size:** 90MB
 - **Speed:** 50-100 docs/second
 - **Accuracy:** High for information retrieval
 - **Device:** CPU-optimized
 
 **Advantages over Bi-Encoders:**
+
 - Higher accuracy for ranking
 - Better at semantic similarity
 - Considers query-document interaction
@@ -820,14 +848,14 @@ The RAG pipeline automatically:
 
 ```json
 {
-  "query": "React hooks tutorial",
-  "documents": [
-    "React hooks introduction...",
-    "Vue.js composition API...",
-    "Advanced React patterns...",
-    "Python decorators guide..."
-  ],
-  "top_k": 2
+	"query": "React hooks tutorial",
+	"documents": [
+		"React hooks introduction...",
+		"Vue.js composition API...",
+		"Advanced React patterns...",
+		"Python decorators guide..."
+	],
+	"top_k": 2
 }
 ```
 
@@ -837,14 +865,14 @@ The RAG pipeline automatically:
 
 ```json
 {
-  "query": "What is JWT?",
-  "documents": [
-    "JSON Web Tokens (JWT) are...",
-    "JavaScript testing frameworks...",
-    "Token-based authentication...",
-    "Web security best practices..."
-  ],
-  "top_k": 1
+	"query": "What is JWT?",
+	"documents": [
+		"JSON Web Tokens (JWT) are...",
+		"JavaScript testing frameworks...",
+		"Token-based authentication...",
+		"Web security best practices..."
+	],
+	"top_k": 1
 }
 ```
 
@@ -854,14 +882,14 @@ The RAG pipeline automatically:
 
 ```json
 {
-  "query": "async/await error handling",
-  "documents": [
-    "try-catch with async/await...",
-    "Promise.catch() method...",
-    "Synchronous error handling...",
-    "Event loop explanation..."
-  ],
-  "top_k": 3
+	"query": "async/await error handling",
+	"documents": [
+		"try-catch with async/await...",
+		"Promise.catch() method...",
+		"Synchronous error handling...",
+		"Event loop explanation..."
+	],
+	"top_k": 3
 }
 ```
 
@@ -873,21 +901,21 @@ The RAG pipeline automatically:
 
 ### Without Reranking
 
-| Metric | Value |
-|--------|-------|
-| Retrieval Time | 100ms |
-| Relevance (top-1) | 75% |
-| Relevance (top-5) | 65% |
+| Metric            | Value |
+| ----------------- | ----- |
+| Retrieval Time    | 100ms |
+| Relevance (top-1) | 75%   |
+| Relevance (top-5) | 65%   |
 
 ### With Reranking
 
-| Metric | Value |
-|--------|-------|
-| Retrieval Time | 100ms |
-| Reranking Time | 150ms |
-| **Total Time** | **250ms** |
-| Relevance (top-1) | **90%** |
-| Relevance (top-5) | **85%** |
+| Metric            | Value     |
+| ----------------- | --------- |
+| Retrieval Time    | 100ms     |
+| Reranking Time    | 150ms     |
+| **Total Time**    | **250ms** |
+| Relevance (top-1) | **90%**   |
+| Relevance (top-5) | **85%**   |
 
 **Trade-off:** +150ms for +15-20% accuracy
 
@@ -920,12 +948,12 @@ The reranker is automatically integrated into the RAG pipeline:
 async def rag_retrieve(query, top_k=5):
     # 1. Vector search (get more than needed)
     initial_docs = vector_store.search(query, top_k=top_k * 2)
-    
+
     # 2. Rerank (if reranker available)
     if reranker_available:
         reranked_docs = reranker.rerank(query, initial_docs, top_k=top_k)
         return reranked_docs
-    
+
     # 3. Return initial results
     return initial_docs[:top_k]
 ```
@@ -938,16 +966,17 @@ async def rag_retrieve(query, top_k=5):
 
 ```json
 {
-  "query": "test",
-  "documents": []  // Error: no documents
+	"query": "test",
+	"documents": [] // Error: no documents
 }
 ```
 
 **Response:**
+
 ```json
 {
-  "success": false,
-  "message": "documents array cannot be empty"
+	"success": false,
+	"message": "documents array cannot be empty"
 }
 ```
 
@@ -955,17 +984,18 @@ async def rag_retrieve(query, top_k=5):
 
 ```json
 {
-  "query": "test",
-  "documents": ["doc1"],
-  "top_k": 0  // Error: must be >= 1
+	"query": "test",
+	"documents": ["doc1"],
+	"top_k": 0 // Error: must be >= 1
 }
 ```
 
 **Response:**
+
 ```json
 {
-  "success": false,
-  "message": "top_k must be at least 1"
+	"success": false,
+	"message": "top_k must be at least 1"
 }
 ```
 
@@ -974,11 +1004,13 @@ async def rag_retrieve(query, top_k=5):
 ## Implementation Details
 
 ### Technology Stack
+
 - **sentence-transformers** 3.3.1 - Cross-encoder framework
 - **transformers** - Hugging Face library
 - **PyTorch** - Deep learning backend
 
 ### Code Location
+
 - Agent: `src/agents/reranker.py`
 - Tests: `tests/test_reranker.py`
 
@@ -988,19 +1020,19 @@ async def rag_retrieve(query, top_k=5):
 class Reranker:
     def __init__(self, model_name):
         self.model = CrossEncoder(model_name)
-    
+
     def rerank(self, query, documents, top_k):
         # Create query-document pairs
         pairs = [[query, doc] for doc in documents]
-        
+
         # Score pairs
         scores = self.model.predict(pairs)
-        
+
         # Sort by score
-        ranked = sorted(zip(documents, scores), 
-                       key=lambda x: x[1], 
+        ranked = sorted(zip(documents, scores),
+                       key=lambda x: x[1],
                        reverse=True)
-        
+
         # Return top-k
         return ranked[:top_k]
 ```
@@ -1054,11 +1086,13 @@ curl -X POST http://localhost:8001/api/gateway \
 ## Testing
 
 ### Run Tests
+
 ```bash
 pytest tests/test_reranker.py -v
 ```
 
 ### Test Coverage
+
 - ✅ Basic reranking
 - ✅ Score validation
 - ✅ Top-k selection
@@ -1070,15 +1104,18 @@ pytest tests/test_reranker.py -v
 ## Best Practices
 
 1. **Set Appropriate Top-K**
+
    - Use 2x initial retrieval for reranking pool
    - Return top-k after reranking
 
 2. **Document Quality**
+
    - Clean, well-formatted documents
    - Remove boilerplate/noise
    - Keep documents focused
 
 3. **Query Optimization**
+
    - Clear, specific queries
    - Use technical terms when applicable
    - Consider using `refine_prompt` first
@@ -1093,10 +1130,12 @@ pytest tests/test_reranker.py -v
 ## Limitations
 
 1. **Speed vs Accuracy**
+
    - Slower than bi-encoder retrieval
    - Trade-off: +150ms for +15% accuracy
 
 2. **Document Length**
+
    - Max 512 tokens per document
    - Longer documents may be truncated
 
@@ -1126,9 +1165,9 @@ pytest tests/test_reranker.py -v
 
 ---
 
-
 ⚠️ CANONICAL FOR FRONTEND (PHASE 15 ONLY)
 The following endpoints are the ONLY ones used by Lobe Chat:
+
 - /api/v1/rag/file/upload
 - /api/v1/rag/file/{id}
 - /api/v1/rag/file/{id}/chunks
@@ -1137,12 +1176,9 @@ The following endpoints are the ONLY ones used by Lobe Chat:
 
 All other endpoints are legacy or internal tools.
 
-
-
 **Last Updated:** February 26, 2026  
 **Maintainer:** DevForge Team  
 **Feedback:** Create an issue in the repository
-
 
 # RAG Integration Flow
 
@@ -1186,38 +1222,38 @@ graph TD
 1. HTTP Request
    POST /rag/ingest-async
    Body: {"file_paths": ["utils.py"], "collection_name": "devforge_docs"}
-   
+
 2. API Endpoint (src/api/routers.py)
    async def ingest_async_endpoint(request: IngestAsyncRequest)
    ↓
    Creates Celery task
-   
+
 3. Celery Task Queue (src/workers/tasks/rag_tasks.py)
    @shared_task
    def async_ingest_documents(file_paths, collection_name)
    ↓
    Initializes RAGAgent
-   
+
 4. RAGAgent (src/agents/rag/agent.py)
    async def ingest_document(file_path)
    ↓
    Delegates to tools layer
-   
+
 5. Tools Layer (src/tools/rag/tools.py)
    async def ingest_documents(file_paths, ...)
    ↓
    Parallel file reading
-   
+
 6. Document Reading
    async def read_document(file_path) -> str
    ↓
    Returns text content
-   
+
 7. Chunking Decision (tools.chunk_document)
    def chunk_document(text, file_path, chunk_size, chunk_overlap)
    ↓
    Checks file extension
-   
+
 8A. Code Path (.py, .js, .ts)
     CodeChunker.chunk(text, file_path)
     ↓
@@ -1226,25 +1262,25 @@ graph TD
     Extract: functions, classes, imports, calls, docstrings
     ↓
     Return chunks with rich metadata
-    
+
 8B. Text Path (.md, .txt, .pdf, .docx)
     TextChunker.chunk(text, file_path)
     ↓
     RecursiveCharacterTextSplitter
     ↓
     Return chunks with basic metadata
-    
+
 9. Convert to LangChain Format
    Document(page_content=content, metadata=metadata)
-   
+
 10. Generate Embeddings
     OllamaEmbeddings.embed_documents(contents)
-    
+
 11. Store in Vector DB
     ChromaVectorStore.add_chunks(chunks, embeddings)
     ↓
     collection.add(ids, embeddings, metadatas, documents)
-    
+
 12. Return Result
     {"success": true, "chunks_created": 15, "task_id": "..."}
 ```
@@ -1259,7 +1295,7 @@ graph TD
 1. User Query
    POST /api/gateway
    Body: {"name": "retrieve_docs", "arguments": {"query": "...", "top_k": 5}}
-   
+
 2. Intent Classification (3-tier)
    IntentClassifier.classify(query)
    ↓
@@ -1268,55 +1304,55 @@ graph TD
    Tier 3: Default fallback → "general"
    ↓
    Returns: code_search | explain | debug | general
-   
+
 3. Query Expansion (intent-aware)
    QueryExpander.expand(query, intent)
    ↓
    Generate 2-3 related queries based on intent
    ↓
    e.g., "RAG config" → ["RAG configuration", "RAG_EMBED_MODEL", "RAG settings"]
-   
+
 4. Semantic Cache Check
    SemanticCache.get(query, intent)
    ↓
    If similarity > 0.95 → Return cached result (10ms)
    Else → Continue to retrieval
-   
+
 5. Multi-Query Vector Search
    For each expanded query:
      ChromaVectorStore.similarity_search(query, top_k)
    ↓
    Returns multiple result sets
-   
+
 6. Result Fusion (RRF)
    ResultFusion.fuse(all_results)
    ↓
    Reciprocal Rank Fusion + Deduplication
    ↓
    Returns merged, ranked results
-   
+
 7. Cross-Encoder Reranking
    Reranker.rerank(query, fused_results)
    ↓
    Stage 2 precision ranking
-   
+
 8. Deterministic Context Shaping (Phase 13)
    ContextShaper.shape_context(reranked_results)
    ↓
    - Deduplicate by Qualified ID
    - Assign Roles (Entry / Dependency / Supporting)
    - Apply Hard Limits (Max 12)
-   
+
 9. Response Generation
    model_router.select_model("rag_simple", prefer_local=False)
    ↓
    Uses cloud model (gpt-oss:120b-cloud) for memory efficiency
    ↓
    Generate answer from context
-   
+
 9. Cache Update
    SemanticCache.set(query, intent, result)
-   
+
 10. Return Response
     {
       "success": true,
@@ -1330,13 +1366,13 @@ graph TD
 
 ### Analytics Endpoints (Phase 12A)
 
-| Endpoint | Purpose |
-|----------|---------|
+| Endpoint                                     | Purpose                     |
+| -------------------------------------------- | --------------------------- |
 | `GET /api/rag/analytics/intent-distribution` | Intent classification stats |
-| `GET /api/rag/analytics/expansion-quality` | Query expansion metrics |
-| `GET /api/rag/analytics/cache-by-intent` | Cache hit rates by intent |
-| `GET /api/rag/analytics/fallback-usage` | Fallback trigger frequency |
-| `GET /api/rag/metrics` | Overall system metrics |
+| `GET /api/rag/analytics/expansion-quality`   | Query expansion metrics     |
+| `GET /api/rag/analytics/cache-by-intent`     | Cache hit rates by intent   |
+| `GET /api/rag/analytics/fallback-usage`      | Fallback trigger frequency  |
+| `GET /api/rag/metrics`                       | Overall system metrics      |
 
 ---
 
@@ -1347,16 +1383,16 @@ graph TD
 ```
 1. User Query
    GET /rag/retrieve?query="authentication functions"
-   
+
 2. RAGAgent.retrieve_with_context(query, top_k=5)
    ↓
    Generate query embedding
-   
+
 3. Vector Search (ChromaVectorStore)
    search(query_embedding, top_k=5, score_threshold=0.5)
    ↓
    Returns initial results (semantic similarity)
-   
+
 4. Graph Expansion (if ENABLE_CODE_GRAPH=true)
    For each result:
      ↓
@@ -1369,12 +1405,12 @@ graph TD
    Fetch related chunks by QID
      ↓
    ChromaVectorStore.get_chunk_by_qualified_id(related_qid)
-   
+
 5. Merge & Deduplicate
    initial_results + related_chunks
    ↓
    Remove duplicates by QID
-   
+
 6. Return Extended Context
    {
      "documents": [...],
@@ -1382,7 +1418,6 @@ graph TD
      "expansion_count": 3
    }
 ```
-
 
 ## Code Path Details
 
@@ -1393,7 +1428,7 @@ graph TD
 ```python
 async def ingest_document(self, file_path: str, embed_model: Optional[str] = None) -> dict:
     from src.tools.rag.tools import ingest_documents as _ingest_documents
-    
+
     # ARCHITECTURE: Delegates to tools layer
     result = await _ingest_documents(
         file_paths=[file_path],
@@ -1402,7 +1437,7 @@ async def ingest_document(self, file_path: str, embed_model: Optional[str] = Non
         chunk_overlap=settings.RAG_CHUNK_OVERLAP,
         backend=self.backend,
     )
-    
+
     logger.info(f"Document ingested: {file_path}", extra={"chunks": result.get("chunks_created", 0)})
     return result
 ```
@@ -1420,14 +1455,14 @@ async def ingest_documents(file_paths, embed_model, chunk_size, chunk_overlap, b
     # Read all documents in parallel
     read_tasks = [read_document(fp) for fp in file_paths]
     contents = await asyncio.gather(*read_tasks, return_exceptions=True)
-    
+
     # Process each document
     all_chunks = []
     for file_path, content in zip(file_paths, contents):
         if isinstance(content, Exception):
             logger.warning(f"Failed to read {file_path}: {content}")
             continue
-        
+
         try:
             # CRITICAL: Call chunk_document for each file
             chunks = chunk_document(
@@ -1439,11 +1474,11 @@ async def ingest_documents(file_paths, embed_model, chunk_size, chunk_overlap, b
             all_chunks.extend(chunks)
         except Exception as e:
             logger.warning(f"Failed to chunk {file_path}: {e}")
-    
+
     # Add to vector store
     if all_chunks:
         vector_store.add_documents(all_chunks)
-    
+
     return {"success": True, "chunks_created": len(all_chunks)}
 ```
 
@@ -1458,13 +1493,13 @@ async def ingest_documents(file_paths, embed_model, chunk_size, chunk_overlap, b
 ```python
 def chunk_document(text: str, file_path: str, chunk_size: int, chunk_overlap: int) -> List[Document]:
     """Phase 10.1: Uses Tree-sitter for code, falls back to text."""
-    
+
     try:
         # NEW: Code-aware chunking
         from src.agents.rag.chunking import CodeChunker, TextChunker
-        
+
         code_chunker = CodeChunker()
-        
+
         # Decision point: Code or Text?
         if code_chunker.is_supported(file_path):  # Check .py, .js, .ts, .tsx, .jsx
             # AST parsing for code files
@@ -1475,15 +1510,15 @@ def chunk_document(text: str, file_path: str, chunk_size: int, chunk_overlap: in
             text_chunker = TextChunker(chunk_size, chunk_overlap)
             chunks_data = text_chunker.chunk(text, file_path)
             logger.info(f"Text chunking: {len(chunks_data)} chunks from {file_path}")
-        
+
         # Convert to LangChain Document format
         documents = [
             Document(page_content=c["content"], metadata=c["metadata"])
             for c in chunks_data
         ]
-        
+
         return documents
-        
+
     except ImportError:
         # Legacy fallback: RecursiveCharacterTextSplitter
         logger.warning("Chunkers not available, using legacy mode")
@@ -1503,13 +1538,13 @@ def chunk_document(text: str, file_path: str, chunk_size: int, chunk_overlap: in
 ```python
 def chunk(self, content: str, file_path: str) -> List[Dict]:
     """Chunk code using AST parsing. Falls back to text on error."""
-    
+
     ext = Path(file_path).suffix.lower()
     language = SUPPORTED_LANGUAGES.get(ext)  # {'.py': 'python', '.js': 'javascript', '.ts': 'typescript'}
-    
+
     if not language or language not in self.parsers:
         return self.text_fallback.chunk(content, file_path)
-    
+
     try:
         return self._chunk_with_ast(content, file_path, language)
     except Exception as e:
@@ -1519,26 +1554,27 @@ def chunk(self, content: str, file_path: str) -> List[Dict]:
 def _chunk_with_ast(self, content: str, file_path: str, language: str) -> List[Dict]:
     """Parse code with Tree-sitter and extract chunks."""
     from tree_sitter import Parser
-    
+
     # Create parser with language
     lang_obj = self.parsers[language]
     parser = Parser(lang_obj)
     tree = parser.parse(bytes(content, 'utf8'))
-    
+
     chunks = []
-    
+
     # Extract imports
     imports = self._extract_imports(tree.root_node, content, file_path, language)
     chunks.extend(imports)
-    
+
     # Extract functions and classes
     entities = self._extract_entities(tree.root_node, content, file_path, language)
     chunks.extend(entities)
-    
+
     return chunks
 ```
 
 **Metadata Extracted:**
+
 - `chunk_type`: "function", "class", "import", "text"
 - `name`: Entity name (e.g., "add", "User")
 - `language`: "python", "javascript", "typescript"
@@ -1560,12 +1596,12 @@ def _chunk_with_ast(self, content: str, file_path: str, language: str) -> List[D
 @property
 def code_graph(self):
     """Lazy-initialized code graph. Derived state, rebuilt from chunk metadata."""
-    
+
     if self._code_graph is None:
         from src.agents.rag.graph import CodeGraph
-        
+
         self._code_graph = CodeGraph()
-        
+
         # ARCHITECTURE COMPLIANCE: Rebuild from vector store metadata
         async def rebuild():
             count = 0
@@ -1576,18 +1612,19 @@ def code_graph(self):
                     chunks = [{"metadata": meta} for meta in batch]
                     self._code_graph.add_chunks_batch(chunks)
                     count += len(batch)
-                
+
                 logger.info(f"Graph rebuilt: {count} chunks → {self._code_graph.size()} nodes")
             except Exception as e:
                 logger.warning(f"Graph rebuild failed: {e}")
-        
+
         # Run rebuild asynchronously
         asyncio.run(rebuild())
-    
+
     return self._code_graph
 ```
 
 **Flow:**
+
 1. First access to `agent.code_graph` triggers rebuild
 2. `ChromaVectorStore.iter_chunk_metadata()` streams metadata in batches (NO embeddings)
 3. For each batch, build QIDs (`file::entity`) and add to graph
@@ -1597,16 +1634,16 @@ def code_graph(self):
 
 ## Integration Verification ✅
 
-| Step | Method | Status | Notes |
-|------|--------|--------|-------|
-| 1 | Celery → RAGAgent.ingest_document | ✅ | Architecture compliant |
-| 2 | RAGAgent → tools.ingest_documents | ✅ | Delegates to tools |
-| 3 | tools.ingest_documents → chunk_document | ✅ | Per-file processing |
-| 4 | chunk_document → CodeChunker/TextChunker | ✅ | Automatic detection |
-| 5 | CodeChunker → Tree-sitter AST | ✅ | Python, JS, TS support |
-| 6 | Extract metadata | ✅ | Functions, classes, imports, calls |
-| 7 | Convert to LangChain Documents | ✅ | Standard format |
-| 8 | ChromaVectorStore.add_chunks | ✅ | BaseVectorStore abstraction |
+| Step | Method                                   | Status | Notes                              |
+| ---- | ---------------------------------------- | ------ | ---------------------------------- |
+| 1    | Celery → RAGAgent.ingest_document        | ✅     | Architecture compliant             |
+| 2    | RAGAgent → tools.ingest_documents        | ✅     | Delegates to tools                 |
+| 3    | tools.ingest_documents → chunk_document  | ✅     | Per-file processing                |
+| 4    | chunk_document → CodeChunker/TextChunker | ✅     | Automatic detection                |
+| 5    | CodeChunker → Tree-sitter AST            | ✅     | Python, JS, TS support             |
+| 6    | Extract metadata                         | ✅     | Functions, classes, imports, calls |
+| 7    | Convert to LangChain Documents           | ✅     | Standard format                    |
+| 8    | ChromaVectorStore.add_chunks             | ✅     | BaseVectorStore abstraction        |
 
 ---
 
@@ -1629,35 +1666,35 @@ def validate(value):
 
 ```json
 [
-  {
-    "content": "def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n    return a + b",
-    "metadata": {
-      "chunk_type": "function",
-      "name": "add",
-      "language": "python",
-      "source": "utils.py",
-      "start_line": 1,
-      "end_line": 3,
-      "imports": [],
-      "calls": [],
-      "docstring": "Add two numbers."
-    }
-  },
-  {
-    "content": "def validate(value):...",
-    "metadata": {
-      "chunk_type": "function",
-      "name": "validate",
-      "language": "python",
-      "source": "utils.py",
-      "start_line": 5,
-      "end_line": 8,
-      "imports": [],
-      "calls": ["add"],  // Detected function call
-      "docstring": null,
-      "role": "dependency"
-    }
-  }
+	{
+		"content": "def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n    return a + b",
+		"metadata": {
+			"chunk_type": "function",
+			"name": "add",
+			"language": "python",
+			"source": "utils.py",
+			"start_line": 1,
+			"end_line": 3,
+			"imports": [],
+			"calls": [],
+			"docstring": "Add two numbers."
+		}
+	},
+	{
+		"content": "def validate(value):...",
+		"metadata": {
+			"chunk_type": "function",
+			"name": "validate",
+			"language": "python",
+			"source": "utils.py",
+			"start_line": 5,
+			"end_line": 8,
+			"imports": [],
+			"calls": ["add"], // Detected function call
+			"docstring": null,
+			"role": "dependency"
+		}
+	}
 ]
 ```
 

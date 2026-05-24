@@ -21,7 +21,7 @@ export type Message = Partial<Timestamps> & {
 
 	// RAG Chunks for citation visualization
 	ragChunks?: import("../rag/client").ChatFileChunk[];
-	ragStrategy?: import("../server/rag/ragAgent").RagStrategy;
+	ragStrategy?: "AGENTIC" | "NO_RAG" | "SUMMARIZE_FILE" | "SUMMARIZE_ALL" | "SEARCH";
 
 	// Router metadata when using llm-router
 	routerMetadata?: {

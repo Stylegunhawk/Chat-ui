@@ -15,9 +15,7 @@
 	let errors: { message: string; stack?: string }[] = $state([]);
 
 	let srcdoc = $derived(
-		type === "text/x-react"
-			? buildReactSrcdoc(content, channel)
-			: buildSrcdoc(content, channel)
+		type === "text/x-react" ? buildReactSrcdoc(content, channel) : buildSrcdoc(content, channel)
 	);
 
 	type PreviewMessage = {

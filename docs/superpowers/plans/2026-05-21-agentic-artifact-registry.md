@@ -12,26 +12,27 @@
 
 ## File Map
 
-| File | Action | Responsibility |
-|---|---|---|
-| `src/lib/stores/artifact.svelte.ts` | **Create** | Reactive class-based store: artifact list, active ID, panel open state |
-| `src/lib/utils/buildSrcdoc.ts` | **Create** | Pure function extracted from HtmlPreviewModal — builds safe srcdoc string |
-| `src/lib/components/chat/ArtifactSandbox.svelte` | **Create** | Inline sandboxed iframe renderer (HTML + SVG) |
-| `src/lib/components/chat/ArtifactPanel.svelte` | **Create** | Right panel: header, content-type router, footer error pill |
-| `src/lib/components/chat/tools/ArtifactOpener.svelte` | **Create** | Tool renderer for `generate_artifact` — calls pushArtifact on mount |
-| `src/lib/components/HtmlPreviewModal.svelte` | **Modify** | Import `buildSrcdoc` from shared utility instead of defining locally |
-| `src/lib/components/CodeBlock.svelte` | **Modify** | Add `lang` prop + "Open in Panel" button for artifact-compatible languages |
-| `src/lib/components/chat/MarkdownBlock.svelte` | **Modify** | Pass `lang={token.lang}` to CodeBlock |
-| `src/lib/server/textGeneration/mcp/toolInvocation.ts` | **Modify** | Add `CLIENT_SIDE_TOOLS` set + short-circuit before MCP call |
-| `src/lib/components/chat/tools/registry.ts` | **Modify** | Register `generate_artifact → ArtifactOpener` |
-| `src/lib/server/textGeneration/utils/toolPrompt.ts` | **Modify** | Document `generate_artifact` tool in LLM system prompt |
-| `src/routes/conversation/[id]/+page.svelte` | **Modify** | Flex split-panel layout wrapping ChatWindow + ArtifactPanel |
+| File                                                  | Action     | Responsibility                                                             |
+| ----------------------------------------------------- | ---------- | -------------------------------------------------------------------------- |
+| `src/lib/stores/artifact.svelte.ts`                   | **Create** | Reactive class-based store: artifact list, active ID, panel open state     |
+| `src/lib/utils/buildSrcdoc.ts`                        | **Create** | Pure function extracted from HtmlPreviewModal — builds safe srcdoc string  |
+| `src/lib/components/chat/ArtifactSandbox.svelte`      | **Create** | Inline sandboxed iframe renderer (HTML + SVG)                              |
+| `src/lib/components/chat/ArtifactPanel.svelte`        | **Create** | Right panel: header, content-type router, footer error pill                |
+| `src/lib/components/chat/tools/ArtifactOpener.svelte` | **Create** | Tool renderer for `generate_artifact` — calls pushArtifact on mount        |
+| `src/lib/components/HtmlPreviewModal.svelte`          | **Modify** | Import `buildSrcdoc` from shared utility instead of defining locally       |
+| `src/lib/components/CodeBlock.svelte`                 | **Modify** | Add `lang` prop + "Open in Panel" button for artifact-compatible languages |
+| `src/lib/components/chat/MarkdownBlock.svelte`        | **Modify** | Pass `lang={token.lang}` to CodeBlock                                      |
+| `src/lib/server/textGeneration/mcp/toolInvocation.ts` | **Modify** | Add `CLIENT_SIDE_TOOLS` set + short-circuit before MCP call                |
+| `src/lib/components/chat/tools/registry.ts`           | **Modify** | Register `generate_artifact → ArtifactOpener`                              |
+| `src/lib/server/textGeneration/utils/toolPrompt.ts`   | **Modify** | Document `generate_artifact` tool in LLM system prompt                     |
+| `src/routes/conversation/[id]/+page.svelte`           | **Modify** | Flex split-panel layout wrapping ChatWindow + ArtifactPanel                |
 
 ---
 
 ## Task 1: Install @friendofsvelte/mermaid
 
 **Files:**
+
 - Run: `npm install @friendofsvelte/mermaid`
 
 - [ ] **Step 1: Install the package**
@@ -55,6 +56,7 @@ Expected: prints `OK`.
 ## Task 2: Extract buildSrcdoc to shared utility + update HtmlPreviewModal
 
 **Files:**
+
 - Create: `src/lib/utils/buildSrcdoc.ts`
 - Create: `src/lib/utils/buildSrcdoc.spec.ts`
 - Modify: `src/lib/components/HtmlPreviewModal.svelte:18-60`
@@ -85,9 +87,7 @@ describe("buildSrcdoc", () => {
 	it("injects base tag into existing <head>", () => {
 		const html = "<!doctype html><html><head><title>T</title></head><body></body></html>";
 		const result = buildSrcdoc(html, "ch3");
-		expect(result.indexOf('<base target="_blank">')).toBeGreaterThan(
-			result.indexOf("<head>")
-		);
+		expect(result.indexOf('<base target="_blank">')).toBeGreaterThan(result.indexOf("<head>"));
 	});
 });
 ```
@@ -181,6 +181,7 @@ Expected: 0 errors.
 ## Task 3: Create the artifact store
 
 **Files:**
+
 - Create: `src/lib/stores/artifact.svelte.ts`
 
 - [ ] **Step 1: Create `src/lib/stores/artifact.svelte.ts`**
@@ -264,6 +265,7 @@ Expected: 0 errors.
 ## Task 4: Plumb `lang` through MarkdownBlock → CodeBlock + add "Open in Panel" button
 
 **Files:**
+
 - Modify: `src/lib/components/chat/MarkdownBlock.svelte:21`
 - Modify: `src/lib/components/CodeBlock.svelte`
 
@@ -280,7 +282,12 @@ In `src/lib/components/chat/MarkdownBlock.svelte`, change line 21 from:
 to:
 
 ```svelte
-<CodeBlock code={token.code} rawCode={token.rawCode} lang={token.lang} loading={loading && !token.isClosed} />
+<CodeBlock
+	code={token.code}
+	rawCode={token.rawCode}
+	lang={token.lang}
+	loading={loading && !token.isClosed}
+/>
 ```
 
 - [ ] **Step 2: Add `lang` prop and "Open in Panel" button to CodeBlock.svelte**
@@ -377,6 +384,7 @@ Expected: 0 errors. If `CarbonSidePanelOpen` isn't found, replace with `CarbonLa
 ## Task 5: Create ArtifactSandbox.svelte
 
 **Files:**
+
 - Create: `src/lib/components/chat/ArtifactSandbox.svelte`
 
 This is a thin inline iframe renderer. It reuses `buildSrcdoc` from the utility we created in Task 2. It does NOT open a modal — it fills whatever container it's placed in.
@@ -446,6 +454,7 @@ Expected: 0 errors.
 ## Task 6: Create ArtifactPanel.svelte
 
 **Files:**
+
 - Create: `src/lib/components/chat/ArtifactPanel.svelte`
 
 This is the full right panel. It reads from `artifactStore` directly and routes to the correct renderer based on `activeArtifact.type`.
@@ -500,9 +509,7 @@ This is the full right panel. It reads from `artifactStore` directly and routes 
 		return content
 			.split("\n")
 			.filter((l) => l.trim())
-			.map((line) =>
-				line.split(",").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1"))
-			);
+			.map((line) => line.split(",").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1")));
 	}
 
 	function handleSandboxError(errs: { message: string; stack?: string }[]) {
@@ -526,7 +533,9 @@ This is the full right panel. It reads from `artifactStore` directly and routes 
 		>
 			<div class="flex min-w-0 items-center gap-2">
 				<span
-					class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[artifact.type] ?? 'bg-gray-500'}"
+					class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white {TYPE_COLORS[
+						artifact.type
+					] ?? 'bg-gray-500'}"
 				>
 					{TYPE_LABELS[artifact.type] ?? artifact.type}
 				</span>
@@ -576,7 +585,6 @@ This is the full right panel. It reads from `artifactStore` directly and routes 
 		<div class="min-h-0 flex-1 overflow-hidden">
 			{#if artifact.type === "text/html" || artifact.type === "image/svg+xml"}
 				<ArtifactSandbox content={artifact.content} onerror={handleSandboxError} />
-
 			{:else if artifact.type === "text/x-mermaid"}
 				{#if browser}
 					{#await import("@friendofsvelte/mermaid") then { default: Mermaid }}
@@ -585,17 +593,18 @@ This is the full right panel. It reads from `artifactStore` directly and routes 
 						</div>
 					{/await}
 				{/if}
-
 			{:else if artifact.type === "application/json"}
 				<div class="scrollbar-custom h-full overflow-auto p-4">
-					<pre class="font-mono text-xs text-gray-800 dark:text-gray-200">{formatJson(artifact.content)}</pre>
+					<pre class="font-mono text-xs text-gray-800 dark:text-gray-200">{formatJson(
+							artifact.content
+						)}</pre>
 				</div>
-
 			{:else if artifact.type === "text/markdown"}
-				<div class="scrollbar-custom prose prose-sm dark:prose-invert h-full max-w-none overflow-auto p-4">
+				<div
+					class="scrollbar-custom prose prose-sm h-full max-w-none overflow-auto p-4 dark:prose-invert"
+				>
 					<MarkdownRenderer content={artifact.content} />
 				</div>
-
 			{:else if artifact.type === "text/csv"}
 				{@const rows = parseCsvRows(artifact.content)}
 				{@const headers = rows[0] ?? []}
@@ -615,7 +624,11 @@ This is the full right panel. It reads from `artifactStore` directly and routes 
 						</thead>
 						<tbody>
 							{#each dataRows as row, i}
-								<tr class={i % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}>
+								<tr
+									class={i % 2 === 0
+										? "bg-white dark:bg-gray-900"
+										: "bg-gray-50 dark:bg-gray-800/50"}
+								>
 									{#each headers as _header, j}
 										<td
 											class="border border-gray-200 px-3 py-2 text-gray-600 dark:border-gray-700 dark:text-gray-400"
@@ -662,6 +675,7 @@ Expected: 0 errors.
 ## Task 7: Wire split-panel layout in +page.svelte
 
 **Files:**
+
 - Modify: `src/routes/conversation/[id]/+page.svelte`
 
 The `<ChatWindow>` component is rendered at line 598. We wrap it and `ArtifactPanel` in a flex container that splits when `artifactStore.panelOpen` is true.
@@ -751,6 +765,7 @@ Expected: 0 errors.
 ## Task 8: Add CLIENT_SIDE_TOOLS to toolInvocation.ts
 
 **Files:**
+
 - Modify: `src/lib/server/textGeneration/mcp/toolInvocation.ts`
 - Create: `src/lib/server/textGeneration/mcp/toolInvocation.clientTools.spec.ts`
 
@@ -810,62 +825,62 @@ const CLIENT_SIDE_TOOLS = new Set<string>(["generate_artifact"]);
 In `src/lib/server/textGeneration/mcp/toolInvocation.ts`, find lines 317–330 (the `if (!mappingEntry)` block inside the async task callback). Replace:
 
 ```ts
-		const mappingEntry = mapping[p.call.name];
-		if (!mappingEntry) {
-			const message = `Unknown MCP function: ${p.call.name}`;
-			results.push({
-				index,
-				error: message,
-				uuid: p.uuid,
-				paramsClean: p.paramsClean,
-			});
-			updatesQueue.push({
-				type: MessageUpdateType.Tool,
-				subtype: MessageToolUpdateType.Error,
-				uuid: p.uuid,
-				message,
-			});
-			return;
-		}
+const mappingEntry = mapping[p.call.name];
+if (!mappingEntry) {
+	const message = `Unknown MCP function: ${p.call.name}`;
+	results.push({
+		index,
+		error: message,
+		uuid: p.uuid,
+		paramsClean: p.paramsClean,
+	});
+	updatesQueue.push({
+		type: MessageUpdateType.Tool,
+		subtype: MessageToolUpdateType.Error,
+		uuid: p.uuid,
+		message,
+	});
+	return;
+}
 ```
 
 with:
 
 ```ts
-		const mappingEntry = mapping[p.call.name];
-		if (!mappingEntry) {
-			if (CLIENT_SIDE_TOOLS.has(p.call.name)) {
-				const argsRaw = parseArgs(p.call.arguments) as Record<string, unknown>;
-				const output = JSON.stringify({ success: true, ...argsRaw });
-				results.push({ index, output, uuid: p.uuid, paramsClean: p.paramsClean });
-				updatesQueue.push({
-					type: MessageUpdateType.Tool,
-					subtype: MessageToolUpdateType.Result,
-					uuid: p.uuid,
-					result: {
-						status: ToolResultStatus.Success,
-						call: { name: p.call.name, parameters: p.paramsClean },
-						outputs: [argsRaw as Record<string, unknown>],
-						display: true,
-					},
-				});
-				return; // collation loop handles toolMessages from results[]
-			}
-			const message = `Unknown MCP function: ${p.call.name}`;
-			results.push({
-				index,
-				error: message,
-				uuid: p.uuid,
-				paramsClean: p.paramsClean,
-			});
-			updatesQueue.push({
-				type: MessageUpdateType.Tool,
-				subtype: MessageToolUpdateType.Error,
-				uuid: p.uuid,
-				message,
-			});
-			return;
-		}
+const mappingEntry = mapping[p.call.name];
+if (!mappingEntry) {
+	if (CLIENT_SIDE_TOOLS.has(p.call.name)) {
+		const argsRaw = parseArgs(p.call.arguments) as Record<string, unknown>;
+		const output = JSON.stringify({ success: true, ...argsRaw });
+		results.push({ index, output, uuid: p.uuid, paramsClean: p.paramsClean });
+		updatesQueue.push({
+			type: MessageUpdateType.Tool,
+			subtype: MessageToolUpdateType.Result,
+			uuid: p.uuid,
+			result: {
+				status: ToolResultStatus.Success,
+				call: { name: p.call.name, parameters: p.paramsClean },
+				outputs: [argsRaw as Record<string, unknown>],
+				display: true,
+			},
+		});
+		return; // collation loop handles toolMessages from results[]
+	}
+	const message = `Unknown MCP function: ${p.call.name}`;
+	results.push({
+		index,
+		error: message,
+		uuid: p.uuid,
+		paramsClean: p.paramsClean,
+	});
+	updatesQueue.push({
+		type: MessageUpdateType.Tool,
+		subtype: MessageToolUpdateType.Error,
+		uuid: p.uuid,
+		message,
+	});
+	return;
+}
 ```
 
 - [ ] **Step 5: Update test to import the constant**
@@ -891,6 +906,7 @@ Expected: 0 errors.
 ## Task 9: Create ArtifactOpener.svelte + register in tool registry
 
 **Files:**
+
 - Create: `src/lib/components/chat/tools/ArtifactOpener.svelte`
 - Modify: `src/lib/components/chat/tools/registry.ts`
 
@@ -921,12 +937,11 @@ Expected: 0 errors.
 		const raw = outputs[0] as Record<string, unknown> | undefined;
 		if (!raw) return;
 
-		const type = typeof raw.type === "string" && VALID_TYPES.has(raw.type)
-			? (raw.type as ArtifactType)
-			: undefined;
-		const title = typeof raw.title === "string" && raw.title.trim()
-			? raw.title.trim()
-			: "Artifact";
+		const type =
+			typeof raw.type === "string" && VALID_TYPES.has(raw.type)
+				? (raw.type as ArtifactType)
+				: undefined;
+		const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Artifact";
 		const content = typeof raw.content === "string" ? raw.content : "";
 
 		if (type && content) {
@@ -977,6 +992,7 @@ Expected: 0 errors.
 ## Task 10: Update toolPrompt.ts with generate_artifact instructions
 
 **Files:**
+
 - Modify: `src/lib/server/textGeneration/utils/toolPrompt.ts`
 
 - [ ] **Step 1: Add generate_artifact to the TOOL USAGE RULES section**

@@ -24,8 +24,7 @@
 			typeof raw.type === "string" && VALID_TYPES.has(raw.type)
 				? (raw.type as ArtifactType)
 				: undefined;
-		const title =
-			typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Artifact";
+		const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Artifact";
 		const content = typeof raw.content === "string" ? raw.content : "";
 
 		if (type && content) {

@@ -1,4 +1,5 @@
 # Agentic Artifact Registry — Design Spec
+
 **Date:** 2026-05-21  
 **Status:** Approved  
 **Stack:** SvelteKit 2 / Svelte 5 / TypeScript / TailwindCSS
@@ -25,7 +26,7 @@ Add a Claude-style artifact registry to chat-ui: a persistent split-panel that r
 
 ### Two Trigger Paths → One Store
 
-```
+````
 Path A (any model):
   LLM writes ```html / ```mermaid / ```svg / ```json / ```csv / ```markdown block
   → CodeBlock.svelte detects language
@@ -38,7 +39,7 @@ Path B (smart models):
   → Emits MessageToolResultUpdate with the artifact payload
   → ArtifactOpener.svelte (registered in toolRendererRegistry) receives update
   → Pushes to artifactStore + sets panelOpen = true automatically
-```
+````
 
 ### Artifact Store (`src/lib/stores/artifact.svelte.ts`)
 
@@ -46,19 +47,19 @@ Svelte 5 module-level `$state` — importable from any component.
 
 ```ts
 export type ArtifactType =
-  | "text/html"
-  | "image/svg+xml"
-  | "text/x-mermaid"
-  | "application/json"
-  | "text/markdown"
-  | "text/csv";
+	| "text/html"
+	| "image/svg+xml"
+	| "text/x-mermaid"
+	| "application/json"
+	| "text/markdown"
+	| "text/csv";
 
 export interface Artifact {
-  id: string;           // randomUUID()
-  type: ArtifactType;
-  title: string;
-  content: string;
-  createdAt: Date;
+	id: string; // randomUUID()
+	type: ArtifactType;
+	title: string;
+	content: string;
+	createdAt: Date;
 }
 
 // Module-level reactive state
@@ -67,34 +68,35 @@ export let activeArtifactId = $state<string | null>(null);
 export let panelOpen = $state(false);
 
 // Helpers
-export function pushArtifact(artifact: Omit<Artifact, "id" | "createdAt">): void
-export function setActive(id: string): void
-export function closePanel(): void
+export function pushArtifact(artifact: Omit<Artifact, "id" | "createdAt">): void;
+export function setActive(id: string): void;
+export function closePanel(): void;
 ```
 
 ---
 
 ## Content Type Registry
 
-| MIME Type | Triggered by | Renderer |
-|---|---|---|
-| `text/html` | ` ```html ` or tool | `ArtifactSandbox` (iframe + `buildSrcdoc`) |
-| `image/svg+xml` | ` ```svg ` or tool | `ArtifactSandbox` (SVG path in `buildSrcdoc`) |
-| `text/x-mermaid` | ` ```mermaid ` or tool | `ArtifactMermaid` (`@friendofsvelte/mermaid`) |
-| `application/json` | ` ```json ` or tool | Formatted `<pre>` with syntax color |
-| `text/markdown` | ` ```markdown ` or tool | Existing `MarkdownRenderer` |
-| `text/csv` | ` ```csv ` or tool | Existing `DataTableRenderer` row parser |
+| MIME Type          | Triggered by            | Renderer                                      |
+| ------------------ | ----------------------- | --------------------------------------------- |
+| `text/html`        | ` ```html ` or tool     | `ArtifactSandbox` (iframe + `buildSrcdoc`)    |
+| `image/svg+xml`    | ` ```svg ` or tool      | `ArtifactSandbox` (SVG path in `buildSrcdoc`) |
+| `text/x-mermaid`   | ` ```mermaid ` or tool  | `ArtifactMermaid` (`@friendofsvelte/mermaid`) |
+| `application/json` | ` ```json ` or tool     | Formatted `<pre>` with syntax color           |
+| `text/markdown`    | ` ```markdown ` or tool | Existing `MarkdownRenderer`                   |
+| `text/csv`         | ` ```csv ` or tool      | Existing `DataTableRenderer` row parser       |
 
 **Language → MIME mapping** in `CodeBlock.svelte`:
+
 ```ts
 const ARTIFACT_LANGS: Record<string, ArtifactType> = {
-  html: "text/html",
-  svg: "image/svg+xml",
-  mermaid: "text/x-mermaid",
-  json: "application/json",
-  markdown: "text/markdown",
-  md: "text/markdown",
-  csv: "text/csv",
+	html: "text/html",
+	svg: "image/svg+xml",
+	mermaid: "text/x-mermaid",
+	json: "application/json",
+	markdown: "text/markdown",
+	md: "text/markdown",
+	csv: "text/csv",
 };
 ```
 
@@ -105,12 +107,15 @@ The existing `showPreview` logic in `CodeBlock.svelte` (DOCTYPE / SVG sniff) is 
 ## New Files
 
 ### `src/lib/stores/artifact.svelte.ts`
+
 Module-level Svelte 5 state. Exports `artifacts`, `activeArtifactId`, `panelOpen`, `pushArtifact`, `setActive`, `closePanel`.
 
 ### `src/lib/components/chat/ArtifactPanel.svelte`
+
 Right panel. Props: none (reads from artifactStore directly).
 
 Structure:
+
 ```
 <div class="flex flex-col h-full w-full">
   <!-- Header -->
@@ -137,15 +142,19 @@ Structure:
 Fullscreen opens a full-`dvh` overlay (same pattern as `HtmlPreviewModal`).
 
 ### `src/lib/components/chat/ArtifactSandbox.svelte`
+
 Thin wrapper around the `buildSrcdoc` function extracted from `HtmlPreviewModal.svelte`. Accepts `content: string`, detects SVG vs HTML automatically (same logic as `HtmlPreviewModal`), renders `<iframe srcdoc sandbox="allow-scripts allow-popups" referrerpolicy="no-referrer">`. Forwards postMessage errors to parent via an `onerror` callback prop. Does **not** open a modal — it's an inline renderer.
 
 ### `src/lib/components/chat/ArtifactJson.svelte`
+
 Inline component (no separate file needed beyond ~30 lines). Parses `content` as JSON, falls back to raw `<pre>` if invalid. Renders with `JSON.stringify(parsed, null, 2)` inside a scrollable `<pre class="font-mono text-sm">`. Defined inside `ArtifactPanel.svelte` as a local sub-component or a small standalone file.
 
 ### `src/lib/components/chat/ArtifactCsv.svelte`
+
 Parses CSV rows using `papaparse` (already a common transitive dep — check `package.json`; if absent, use a 10-line manual split on `\n` and `,`). Renders as a scrollable table using the same styling conventions as `DataTableRenderer`. Defined inline in `ArtifactPanel.svelte` or as a small standalone file.
 
 ### `src/lib/components/chat/tools/ArtifactOpener.svelte`
+
 A tool renderer registered for the `generate_artifact` tool in `registry.ts`. On mount, reads `update.result.outputs[0]` to extract `{ type, title, content }`, calls `pushArtifact(...)`, and renders nothing visible (the panel opening is the UX). If parsing fails, shows a small error inline.
 
 ---
@@ -171,9 +180,13 @@ Add "Open in Panel" button alongside the existing "Preview" button:
 
 ```svelte
 {#if artifactType}
-  <button onclick={() => { pushArtifact({ type: artifactType, title: lang ?? "Artifact", content: rawCode }); }}>
-    ▶ Open in Panel
-  </button>
+	<button
+		onclick={() => {
+			pushArtifact({ type: artifactType, title: lang ?? "Artifact", content: rawCode });
+		}}
+	>
+		▶ Open in Panel
+	</button>
 {/if}
 ```
 
@@ -187,14 +200,14 @@ Import `panelOpen` and `ArtifactPanel`. Wrap the existing `ChatWindow` in a flex
 
 ```svelte
 <div class="flex h-full w-full overflow-hidden">
-  <div class="min-w-0 flex-1 transition-all">
-    <ChatWindow ... />
-  </div>
-  {#if panelOpen}
-    <div class="hidden w-1/2 shrink-0 border-l border-gray-200 md:flex dark:border-gray-700">
-      <ArtifactPanel />
-    </div>
-  {/if}
+	<div class="min-w-0 flex-1 transition-all">
+		<ChatWindow ... />
+	</div>
+	{#if panelOpen}
+		<div class="hidden w-1/2 shrink-0 border-l border-gray-200 dark:border-gray-700 md:flex">
+			<ArtifactPanel />
+		</div>
+	{/if}
 </div>
 ```
 
@@ -208,8 +221,8 @@ On `<768px` the panel is hidden in the flex layout and instead `ArtifactPanel` r
 import ArtifactOpener from "./ArtifactOpener.svelte";
 
 export const toolRendererRegistry: Record<string, Component<ToolRendererProps>> = {
-  generate_data: DataTableRenderer as unknown as Component<ToolRendererProps>,
-  generate_artifact: ArtifactOpener as unknown as Component<ToolRendererProps>,
+	generate_data: DataTableRenderer as unknown as Component<ToolRendererProps>,
+	generate_artifact: ArtifactOpener as unknown as Component<ToolRendererProps>,
 };
 ```
 
@@ -223,26 +236,26 @@ const CLIENT_SIDE_TOOLS = new Set(["generate_artifact"]);
 // Inside the tasks.map(async (p, index) => { ... }) callback,
 // BEFORE the existing "Unknown MCP function" error block:
 if (!mappingEntry) {
-  if (CLIENT_SIDE_TOOLS.has(p.call.name)) {
-    const argsRaw = parseArgs(p.call.arguments) as Record<string, unknown>;
-    const output = JSON.stringify({ success: true, ...argsRaw });
-    results.push({ index, output, uuid: p.uuid, paramsClean: p.paramsClean });
-    updatesQueue.push({
-      type: MessageUpdateType.Tool,
-      subtype: MessageToolUpdateType.Result,
-      uuid: p.uuid,
-      result: {
-        status: ToolResultStatus.Success,
-        call: { name: p.call.name, parameters: p.paramsClean },
-        outputs: [argsRaw as Record<string, unknown>],
-        display: true,
-      },
-    });
-    // toolMessages is built after all tasks complete in the collation loop;
-    // store output in results so it gets picked up there — return early.
-    return; // NOT continue — this is inside an async callback, not a for loop
-  }
-  // existing error path...
+	if (CLIENT_SIDE_TOOLS.has(p.call.name)) {
+		const argsRaw = parseArgs(p.call.arguments) as Record<string, unknown>;
+		const output = JSON.stringify({ success: true, ...argsRaw });
+		results.push({ index, output, uuid: p.uuid, paramsClean: p.paramsClean });
+		updatesQueue.push({
+			type: MessageUpdateType.Tool,
+			subtype: MessageToolUpdateType.Result,
+			uuid: p.uuid,
+			result: {
+				status: ToolResultStatus.Success,
+				call: { name: p.call.name, parameters: p.paramsClean },
+				outputs: [argsRaw as Record<string, unknown>],
+				display: true,
+			},
+		});
+		// toolMessages is built after all tasks complete in the collation loop;
+		// store output in results so it gets picked up there — return early.
+		return; // NOT continue — this is inside an async callback, not a for loop
+	}
+	// existing error path...
 }
 ```
 
@@ -272,7 +285,7 @@ All other renderers reuse existing code (`buildSrcdoc`, `MarkdownRenderer`, `Dat
 
 ## Data Flow (end to end)
 
-```
+````
 1. LLM streams message containing ```html block
 2. MarkdownRenderer → MarkdownBlock → CodeBlock
 3. CodeBlock detects lang="html" → renders "▶ Open in Panel" button
@@ -281,7 +294,7 @@ All other renderers reuse existing code (`buildSrcdoc`, `MarkdownRenderer`, `Dat
 6. +page.svelte reacts: ArtifactPanel mounts in right column
 7. ArtifactPanel renders ArtifactSandbox with the content in a sandboxed iframe
 8. postMessage error hook reports runtime errors back to ArtifactPanel footer
-```
+````
 
 ```
 1. LLM calls generate_artifact({ type: "text/x-mermaid", title: "Auth Flow", content: "..." })

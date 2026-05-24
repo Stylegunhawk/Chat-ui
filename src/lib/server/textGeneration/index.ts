@@ -7,7 +7,7 @@ import {
 	MessageUpdateStatus,
 } from "$lib/types/MessageUpdate";
 import { generate } from "./generate";
-import { runMcpFlow } from "./mcp/runMcpFlow";
+import { runToolFlow } from "./mcp/runMcpFlow";
 import { mergeAsyncGenerators } from "$lib/utils/mergeAsyncGenerators";
 import type { TextGenerationContext } from "./types";
 
@@ -49,9 +49,10 @@ async function* textGenerationWithoutTitle(
 
 	const processedMessages = await preprocessMessages(messages, convId);
 
-	// Try MCP tool flow first; fall back to default generation if not selected/available
+	// Try tool flow first (handles MCP servers + local RAG/client-side tools);
+	// fall back to default generation if no tools are applicable.
 	try {
-		const mcpGen = runMcpFlow({
+		const mcpGen = runToolFlow({
 			model: ctx.model,
 			conv,
 			messages: processedMessages,

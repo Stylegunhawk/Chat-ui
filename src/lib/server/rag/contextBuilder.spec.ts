@@ -40,7 +40,6 @@ describe("contextBuilder", () => {
 					is_graph_expansion: false,
 				},
 			],
-			undefined,
 			[
 				{
 					id: "file-1",

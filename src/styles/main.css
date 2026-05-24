@@ -81,7 +81,6 @@ html.dark {
 	--email-btn-hover-border: rgba(255, 255, 255, 0.3);
 }
 
-
 @layer components {
 	.btn {
 		@apply inline-flex flex-shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap outline-none transition-all focus:ring disabled:cursor-default;
@@ -106,17 +105,17 @@ html.dark {
 
 	/* --- DEVFORGE LANDING COMPONENTS --- */
 	.devforge-blob {
-		@apply absolute rounded-full blur-[90px] -z-10 opacity-60;
+		@apply absolute -z-10 rounded-full opacity-60 blur-[90px];
 		animation: shift 20s infinite alternate ease-in-out;
 	}
 
 	.devforge-blob-1 {
-		@apply w-[45vw] h-[45vw] -top-[10%] -left-[10%];
+		@apply -left-[10%] -top-[10%] h-[45vw] w-[45vw];
 		background: radial-gradient(circle, rgba(120, 120, 120, 0.3) 0%, rgba(20, 20, 20, 0) 70%);
 	}
 
 	.devforge-blob-2 {
-		@apply w-[35vw] h-[35vw] -bottom-[15%] -right-[10%];
+		@apply -bottom-[15%] -right-[10%] h-[35vw] w-[35vw];
 		background: radial-gradient(circle, rgba(200, 200, 200, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
 		animation-delay: -5s;
 		animation-duration: 25s;
@@ -141,36 +140,40 @@ html.dark {
 		backdrop-filter: blur(24px);
 		-webkit-backdrop-filter: blur(24px);
 		border: 1px solid var(--glass-border);
-		box-shadow: 0 30px 60px var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		box-shadow:
+			0 30px 60px var(--glass-shadow),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
 		transition: all 0.9s cubic-bezier(0.19, 1, 0.22, 1);
 		position: relative;
 		z-index: 1;
-		@apply rounded-3xl w-[90%] max-w-[600px] min-h-[400px] flex flex-col items-center justify-center relative overflow-hidden;
+		@apply relative flex min-h-[400px] w-[90%] max-w-[600px] flex-col items-center justify-center overflow-hidden rounded-3xl;
 	}
 
 	.devforge-glass-panel.expanded {
-		@apply max-w-[900px] min-h-[500px];
+		@apply min-h-[500px] max-w-[900px];
 	}
 
 	.devforge-view {
-		@apply absolute w-full h-full flex flex-col items-center justify-center opacity-0 pointer-events-none;
-		transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+		@apply pointer-events-none absolute flex h-full w-full flex-col items-center justify-center opacity-0;
+		transition:
+			opacity 0.8s ease,
+			transform 0.8s cubic-bezier(0.19, 1, 0.22, 1);
 	}
 
 	.devforge-view.active {
-		@apply opacity-100 pointer-events-auto scale-100 translate-y-0;
+		@apply pointer-events-auto translate-y-0 scale-100 opacity-100;
 	}
 
 	.devforge-view.hidden-up {
-		@apply -translate-y-[40px] scale-[0.98] opacity-0 pointer-events-none;
+		@apply pointer-events-none -translate-y-[40px] scale-[0.98] opacity-0;
 	}
 
 	.devforge-view.hidden-down {
-		@apply translate-y-[40px] scale-[0.98] opacity-0 pointer-events-none;
+		@apply pointer-events-none translate-y-[40px] scale-[0.98] opacity-0;
 	}
 
 	.devforge-logo {
-		@apply text-5xl font-light uppercase mb-10 select-none;
+		@apply mb-10 select-none text-5xl font-light uppercase;
 		letter-spacing: 12px;
 		background: linear-gradient(135deg, var(--logo-gradient-from) 0%, var(--logo-gradient-to) 100%);
 		background-clip: text;
@@ -184,7 +187,7 @@ html.dark {
 		background: var(--start-btn-bg);
 		border: 1px solid var(--start-btn-border);
 		color: var(--text-main);
-		@apply px-10 py-3.5 rounded-full text-sm uppercase cursor-pointer transition-all duration-500 ease-in-out;
+		@apply cursor-pointer rounded-full px-10 py-3.5 text-sm uppercase transition-all duration-500 ease-in-out;
 		letter-spacing: 3px;
 		backdrop-filter: blur(10px);
 		opacity: 0;
@@ -227,25 +230,25 @@ html.dark {
 	}
 
 	.devforge-auth-header {
-		@apply text-[1.5rem] font-light mb-[30px] -mt-[20px];
+		@apply -mt-[20px] mb-[30px] text-[1.5rem] font-light;
 		color: var(--text-main);
 		letter-spacing: 4px;
 	}
 
 	.devforge-auth-buttons {
-		@apply flex flex-col gap-4 w-[80%] max-w-[320px];
+		@apply flex w-[80%] max-w-[320px] flex-col gap-4;
 	}
 
 	.devforge-auth-btn {
-		@apply flex items-center justify-center gap-3 w-full px-6 py-3.5 rounded-full text-[0.95rem] font-medium cursor-pointer transition-all duration-300 ease-in-out no-underline;
+		@apply flex w-full cursor-pointer items-center justify-center gap-3 rounded-full px-6 py-3.5 text-[0.95rem] font-medium no-underline transition-all duration-300 ease-in-out;
 	}
 
 	.devforge-google-btn {
-		@apply bg-white text-black border border-white;
+		@apply border border-white bg-white text-black;
 	}
 
 	.devforge-google-btn:hover {
-		@apply bg-[#f1f1f1] -translate-y-[2px];
+		@apply -translate-y-[2px] bg-[#f1f1f1];
 		box-shadow: 0 8px 20px rgba(255, 255, 255, 0.1);
 	}
 
@@ -263,7 +266,7 @@ html.dark {
 
 	/* Backdrop for landing page — background image adapts to theme */
 	.devforge-backdrop {
-		background-image: url('/imm1.jpeg');
+		background-image: url("/imm1.jpeg");
 		background-size: cover;
 		background-position: center;
 		background-repeat: no-repeat;
@@ -271,7 +274,7 @@ html.dark {
 
 	/* Dark overlay for readability (light mode) */
 	.devforge-backdrop::before {
-		content: '';
+		content: "";
 		position: absolute;
 		inset: 0;
 		background: rgba(245, 245, 247, 0.35);
@@ -282,7 +285,7 @@ html.dark {
 
 	/* Dark mode: use imm2.jpg */
 	html.dark .devforge-backdrop {
-		background-image: url('/imm2.jpg');
+		background-image: url("/imm2.jpg");
 	}
 
 	/* Dark overlay for readability (dark mode) */
@@ -298,20 +301,18 @@ html.dark {
 	/* Link in auth view — adapts to theme */
 	.devforge-link {
 		color: var(--text-link);
-		@apply no-underline font-semibold ml-1 transition-colors;
+		@apply ml-1 font-semibold no-underline transition-colors;
 	}
 
 	.devforge-link:hover {
 		color: var(--text-link-hover);
 		@apply underline;
 	}
-
 }
 
 /* end @layer components */
 
 @layer utilities {
-
 	/* your existing utilities */
 	.scrollbar-custom {
 		@apply scrollbar-thin scrollbar-track-transparent scrollbar-thumb-black/10 scrollbar-thumb-rounded-full scrollbar-w-1 hover:scrollbar-thumb-black/20 dark:scrollbar-thumb-white/10 dark:hover:scrollbar-thumb-white/20;

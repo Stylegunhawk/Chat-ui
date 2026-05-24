@@ -101,7 +101,8 @@
 					title: "Delete Repository",
 					icon: CarbonTrashCan,
 					accent: "border-l-red-700",
-					description: "Permanently deletes the repository and all its contents. This cannot be undone.",
+					description:
+						"Permanently deletes the repository and all its contents. This cannot be undone.",
 				};
 			case "create_release":
 				return {

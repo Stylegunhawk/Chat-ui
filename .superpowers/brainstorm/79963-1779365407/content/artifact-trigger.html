@@ -1,99 +1,265 @@
 <h2>How does an artifact get created?</h2>
-<p class="subtitle">The trigger mechanism affects how the LLM produces artifacts and how much backend work is needed.</p>
+<p class="subtitle">
+	The trigger mechanism affects how the LLM produces artifacts and how much backend work is needed.
+</p>
 
 <div class="cards">
+	<!-- Option A: Code block upgrade -->
+	<div class="card" data-choice="code-block" onclick="toggleSelect(this)">
+		<div
+			class="card-image"
+			style="
+				padding: 12px;
+				background: #0f172a;
+				border-radius: 8px;
+				font-size: 11px;
+				font-family: monospace;
+			"
+		>
+			<div
+				style="
+					background: #1e293b;
+					border-radius: 6px;
+					padding: 8px;
+					height: 160px;
+					overflow: hidden;
+				"
+			>
+				<div style="color: #94a3b8; font-size: 9px; margin-bottom: 6px">🤖 Assistant message</div>
+				<div style="color: #e2e8f0; font-size: 10px; margin-bottom: 8px">
+					Here's your interactive dashboard:
+				</div>
+				<!-- Code block with "open in panel" button -->
+				<div
+					style="
+						background: #0f172a;
+						border-radius: 6px;
+						overflow: hidden;
+						border: 1px solid #334155;
+					"
+				>
+					<div
+						style="
+							background: #1e293b;
+							padding: 4px 8px;
+							display: flex;
+							justify-content: space-between;
+							align-items: center;
+						"
+					>
+						<span style="color: #7dd3fc; font-size: 9px; font-weight: 600">html</span>
+						<div style="display: flex; gap: 6px; align-items: center">
+							<span style="color: #94a3b8; font-size: 9px">copy</span>
+							<span
+								style="
+									background: #3b82f6;
+									color: #fff;
+									font-size: 9px;
+									padding: 1px 6px;
+									border-radius: 3px;
+									cursor: pointer;
+								"
+								>▶ Preview</span
+							>
+						</div>
+					</div>
+					<div style="padding: 6px 8px">
+						<div style="color: #7dd3fc; font-size: 9px">&lt;!DOCTYPE html&gt;</div>
+						<div style="color: #e2e8f0; font-size: 9px">&lt;html&gt;...&lt;/html&gt;</div>
+					</div>
+				</div>
+				<div style="color: #64748b; font-size: 9px; margin-top: 6px">
+					Click ▶ Preview → opens right panel
+				</div>
+			</div>
+		</div>
+		<div class="card-body">
+			<h3>Code Block Upgrade</h3>
+			<p>
+				The LLM writes a normal <code>```html</code> or <code>```mermaid</code> block. A "▶
+				Preview" button appears on hover. No new tools needed — works with any model.
+			</p>
+			<div class="pros-cons">
+				<div class="pros">
+					<h4>Pros</h4>
+					<ul>
+						<li>Zero backend change</li>
+						<li>Works with any LLM</li>
+						<li>Markdown-native</li>
+					</ul>
+				</div>
+				<div class="cons">
+					<h4>Cons</h4>
+					<ul>
+						<li>LLM doesn't "know" it's an artifact</li>
+						<li>No structured metadata</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
 
-  <!-- Option A: Code block upgrade -->
-  <div class="card" data-choice="code-block" onclick="toggleSelect(this)">
-    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-size:11px;font-family:monospace;">
-      <div style="background:#1e293b;border-radius:6px;padding:8px;height:160px;overflow:hidden;">
-        <div style="color:#94a3b8;font-size:9px;margin-bottom:6px;">🤖 Assistant message</div>
-        <div style="color:#e2e8f0;font-size:10px;margin-bottom:8px;">Here's your interactive dashboard:</div>
-        <!-- Code block with "open in panel" button -->
-        <div style="background:#0f172a;border-radius:6px;overflow:hidden;border:1px solid #334155;">
-          <div style="background:#1e293b;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;">
-            <span style="color:#7dd3fc;font-size:9px;font-weight:600;">html</span>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span style="color:#94a3b8;font-size:9px;">copy</span>
-              <span style="background:#3b82f6;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;cursor:pointer;">▶ Preview</span>
-            </div>
-          </div>
-          <div style="padding:6px 8px;">
-            <div style="color:#7dd3fc;font-size:9px;">&lt;!DOCTYPE html&gt;</div>
-            <div style="color:#e2e8f0;font-size:9px;">&lt;html&gt;...&lt;/html&gt;</div>
-          </div>
-        </div>
-        <div style="color:#64748b;font-size:9px;margin-top:6px;">Click ▶ Preview → opens right panel</div>
-      </div>
-    </div>
-    <div class="card-body">
-      <h3>Code Block Upgrade</h3>
-      <p>The LLM writes a normal <code>```html</code> or <code>```mermaid</code> block. A "▶ Preview" button appears on hover. No new tools needed — works with any model.</p>
-      <div class="pros-cons">
-        <div class="pros"><h4>Pros</h4><ul><li>Zero backend change</li><li>Works with any LLM</li><li>Markdown-native</li></ul></div>
-        <div class="cons"><h4>Cons</h4><ul><li>LLM doesn't "know" it's an artifact</li><li>No structured metadata</li></ul></div>
-      </div>
-    </div>
-  </div>
+	<!-- Option B: Tool-first -->
+	<div class="card" data-choice="tool-first" onclick="toggleSelect(this)">
+		<div
+			class="card-image"
+			style="
+				padding: 12px;
+				background: #0f172a;
+				border-radius: 8px;
+				font-size: 11px;
+				font-family: monospace;
+			"
+		>
+			<div
+				style="
+					background: #1e293b;
+					border-radius: 6px;
+					padding: 8px;
+					height: 160px;
+					overflow: hidden;
+				"
+			>
+				<div style="color: #94a3b8; font-size: 9px; margin-bottom: 6px">
+					🤖 Assistant — calling tool
+				</div>
+				<!-- Tool call card -->
+				<div
+					style="
+						background: #0f172a;
+						border-radius: 6px;
+						padding: 6px;
+						border-left: 3px solid #a855f7;
+						margin-bottom: 6px;
+					"
+				>
+					<div style="color: #a855f7; font-size: 9px; font-weight: 600">⚙ generate_artifact</div>
+					<div style="color: #64748b; font-size: 9px">type: "text/html" · title: "Dashboard"</div>
+				</div>
+				<!-- Result auto-opens panel -->
+				<div
+					style="
+						background: #1e293b;
+						border: 1px solid #22c55e;
+						border-radius: 6px;
+						padding: 6px;
+						display: flex;
+						align-items: center;
+						gap: 6px;
+					"
+				>
+					<span style="color: #22c55e; font-size: 10px">✓</span>
+					<div>
+						<div style="color: #e2e8f0; font-size: 9px">Artifact ready → panel auto-opens</div>
+						<div style="color: #64748b; font-size: 9px">title · type · version tracked</div>
+					</div>
+				</div>
+				<div style="color: #64748b; font-size: 9px; margin-top: 6px">
+					Panel opens instantly, no user click needed
+				</div>
+			</div>
+		</div>
+		<div class="card-body">
+			<h3>Dedicated Tool (<code>generate_artifact</code>)</h3>
+			<p>
+				LLM explicitly calls a <code>generate_artifact</code> MCP tool. Panel opens automatically.
+				Artifact has structured metadata: title, type, version.
+			</p>
+			<div class="pros-cons">
+				<div class="pros">
+					<h4>Pros</h4>
+					<ul>
+						<li>LLM is intentional</li>
+						<li>Typed + versioned</li>
+						<li>Auto-opens panel</li>
+					</ul>
+				</div>
+				<div class="cons">
+					<h4>Cons</h4>
+					<ul>
+						<li>Needs MCP tool wiring</li>
+						<li>Model must learn new tool</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
 
-  <!-- Option B: Tool-first -->
-  <div class="card" data-choice="tool-first" onclick="toggleSelect(this)">
-    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-size:11px;font-family:monospace;">
-      <div style="background:#1e293b;border-radius:6px;padding:8px;height:160px;overflow:hidden;">
-        <div style="color:#94a3b8;font-size:9px;margin-bottom:6px;">🤖 Assistant — calling tool</div>
-        <!-- Tool call card -->
-        <div style="background:#0f172a;border-radius:6px;padding:6px;border-left:3px solid #a855f7;margin-bottom:6px;">
-          <div style="color:#a855f7;font-size:9px;font-weight:600;">⚙ generate_artifact</div>
-          <div style="color:#64748b;font-size:9px;">type: "text/html" · title: "Dashboard"</div>
-        </div>
-        <!-- Result auto-opens panel -->
-        <div style="background:#1e293b;border:1px solid #22c55e;border-radius:6px;padding:6px;display:flex;align-items:center;gap:6px;">
-          <span style="color:#22c55e;font-size:10px;">✓</span>
-          <div>
-            <div style="color:#e2e8f0;font-size:9px;">Artifact ready → panel auto-opens</div>
-            <div style="color:#64748b;font-size:9px;">title · type · version tracked</div>
-          </div>
-        </div>
-        <div style="color:#64748b;font-size:9px;margin-top:6px;">Panel opens instantly, no user click needed</div>
-      </div>
-    </div>
-    <div class="card-body">
-      <h3>Dedicated Tool (<code>generate_artifact</code>)</h3>
-      <p>LLM explicitly calls a <code>generate_artifact</code> MCP tool. Panel opens automatically. Artifact has structured metadata: title, type, version.</p>
-      <div class="pros-cons">
-        <div class="pros"><h4>Pros</h4><ul><li>LLM is intentional</li><li>Typed + versioned</li><li>Auto-opens panel</li></ul></div>
-        <div class="cons"><h4>Cons</h4><ul><li>Needs MCP tool wiring</li><li>Model must learn new tool</li></ul></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Option C: Both -->
-  <div class="card" data-choice="both" onclick="toggleSelect(this)">
-    <div class="card-image" style="padding:12px;background:#0f172a;border-radius:8px;font-size:11px;font-family:monospace;">
-      <div style="height:160px;display:flex;flex-direction:column;gap:6px;">
-        <div style="background:#1e293b;border-radius:6px;padding:6px;flex:1;overflow:hidden;">
-          <div style="color:#7dd3fc;font-size:9px;font-weight:600;">Smart models → tool path</div>
-          <div style="background:#0f172a;border-radius:4px;padding:4px;border-left:2px solid #a855f7;margin-top:4px;">
-            <div style="color:#a855f7;font-size:9px;">⚙ generate_artifact  →  auto-open panel</div>
-          </div>
-        </div>
-        <div style="color:#475569;font-size:9px;text-align:center;">— or —</div>
-        <div style="background:#1e293b;border-radius:6px;padding:6px;flex:1;overflow:hidden;">
-          <div style="color:#94a3b8;font-size:9px;font-weight:600;">Any model → code block path</div>
-          <div style="background:#0f172a;border-radius:4px;padding:4px;border-left:2px solid #3b82f6;margin-top:4px;">
-            <div style="color:#3b82f6;font-size:9px;">```html  →  ▶ Preview button</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="card-body">
-      <h3>Both (Recommended)</h3>
-      <p>Code blocks get a "▶ Preview" button automatically. Smart models can also call <code>generate_artifact</code> for auto-open + metadata. Best of both worlds, progressive enhancement.</p>
-      <div class="pros-cons">
-        <div class="pros"><h4>Pros</h4><ul><li>Works with any model</li><li>Smart models get full power</li><li>Backwards compatible</li></ul></div>
-        <div class="cons"><h4>Cons</h4><ul><li>Two code paths to maintain</li></ul></div>
-      </div>
-    </div>
-  </div>
-
+	<!-- Option C: Both -->
+	<div class="card" data-choice="both" onclick="toggleSelect(this)">
+		<div
+			class="card-image"
+			style="
+				padding: 12px;
+				background: #0f172a;
+				border-radius: 8px;
+				font-size: 11px;
+				font-family: monospace;
+			"
+		>
+			<div style="height: 160px; display: flex; flex-direction: column; gap: 6px">
+				<div
+					style="background: #1e293b; border-radius: 6px; padding: 6px; flex: 1; overflow: hidden"
+				>
+					<div style="color: #7dd3fc; font-size: 9px; font-weight: 600">
+						Smart models → tool path
+					</div>
+					<div
+						style="
+							background: #0f172a;
+							border-radius: 4px;
+							padding: 4px;
+							border-left: 2px solid #a855f7;
+							margin-top: 4px;
+						"
+					>
+						<div style="color: #a855f7; font-size: 9px">⚙ generate_artifact → auto-open panel</div>
+					</div>
+				</div>
+				<div style="color: #475569; font-size: 9px; text-align: center">— or —</div>
+				<div
+					style="background: #1e293b; border-radius: 6px; padding: 6px; flex: 1; overflow: hidden"
+				>
+					<div style="color: #94a3b8; font-size: 9px; font-weight: 600">
+						Any model → code block path
+					</div>
+					<div
+						style="
+							background: #0f172a;
+							border-radius: 4px;
+							padding: 4px;
+							border-left: 2px solid #3b82f6;
+							margin-top: 4px;
+						"
+					>
+						<div style="color: #3b82f6; font-size: 9px">```html → ▶ Preview button</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="card-body">
+			<h3>Both (Recommended)</h3>
+			<p>
+				Code blocks get a "▶ Preview" button automatically. Smart models can also call
+				<code>generate_artifact</code> for auto-open + metadata. Best of both worlds, progressive
+				enhancement.
+			</p>
+			<div class="pros-cons">
+				<div class="pros">
+					<h4>Pros</h4>
+					<ul>
+						<li>Works with any model</li>
+						<li>Smart models get full power</li>
+						<li>Backwards compatible</li>
+					</ul>
+				</div>
+				<div class="cons">
+					<h4>Cons</h4>
+					<ul>
+						<li>Two code paths to maintain</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
 </div>

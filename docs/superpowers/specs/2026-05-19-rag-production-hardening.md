@@ -21,10 +21,12 @@
 Add a `withTimeout<T>(ms: number, promise: Promise<T>): Promise<T>` helper inside `ragAgent.ts`. It races the given promise against a `setTimeout` rejection. On timeout, the error is caught by the existing `try/catch` in `execute()`, which already returns `[]` on failure — so chat continues without RAG context.
 
 **Timeout values:**
+
 - `SEARCH` strategy: **5 000 ms** — single backend round-trip with reranking
 - `SUMMARIZE_FILE` / `SUMMARIZE_ALL` strategy: **10 000 ms** — parallel file chunk reads, more data
 
 **Behavior on timeout:**
+
 - Log: `[RagAgent] Backend timeout after ${ms}ms for strategy ${plan.strategy} — degrading gracefully`
 - Return `[]` (existing empty-chunk path: LLM answers without RAG context, no crash)
 
@@ -32,16 +34,17 @@ Add a `withTimeout<T>(ms: number, promise: Promise<T>): Promise<T>` helper insid
 
 ```typescript
 function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`RAG timeout after ${ms}ms`)), ms)
-    ),
-  ]);
+	return Promise.race([
+		promise,
+		new Promise<T>((_, reject) =>
+			setTimeout(() => reject(new Error(`RAG timeout after ${ms}ms`)), ms)
+		),
+	]);
 }
 ```
 
 Usage in `execute()`:
+
 ```typescript
 const TIMEOUT_SEARCH_MS = 5_000;
 const TIMEOUT_SUMMARIZE_MS = 10_000;
@@ -74,18 +77,18 @@ Even with the file-list preamble fix, SEARCH returns top-5 semantic snippets. SU
 ```typescript
 // After the explicitFile + isSummarize branch:
 if (!explicitFile && availableFiles.length === 1) {
-  const activeFile = inferActiveFile(conversationHistory, availableFiles);
-  if (activeFile && isSummarize) {
-    const totalChunks = activeFile.chunkCount ?? 10;
-    const isPdf = activeFile.name.toLowerCase().endsWith(".pdf");
-    const limit = Math.min(totalChunks, 20) + (isPdf ? 3 : 0);
-    return {
-      strategy: "SUMMARIZE_FILE",
-      searchQuery: userQuery,
-      historyContext,
-      filePlans: [{ fileId: activeFile.id, fileName: activeFile.name, action: "DEEP_DIVE", limit }],
-    };
-  }
+	const activeFile = inferActiveFile(conversationHistory, availableFiles);
+	if (activeFile && isSummarize) {
+		const totalChunks = activeFile.chunkCount ?? 10;
+		const isPdf = activeFile.name.toLowerCase().endsWith(".pdf");
+		const limit = Math.min(totalChunks, 20) + (isPdf ? 3 : 0);
+		return {
+			strategy: "SUMMARIZE_FILE",
+			searchQuery: userQuery,
+			historyContext,
+			filePlans: [{ fileId: activeFile.id, fileName: activeFile.name, action: "DEEP_DIVE", limit }],
+		};
+	}
 }
 ```
 
@@ -96,6 +99,7 @@ if (!explicitFile && availableFiles.length === 1) {
 ### Problem B: `queryRewriter.ts` is dead code
 
 `queryRewriter.ts` exports `rewriteQueryWithHistory()` which calls `generateFromDefaultEndpoint` (an LLM). Nothing in `ragAgent.ts` imports it. It was superseded when the LLM planner was removed. Leaving it risks:
+
 - A future contributor accidentally re-importing it and reintroducing LLM latency
 - Confusion about whether query rewriting is active
 
@@ -107,19 +111,19 @@ if (!explicitFile && availableFiles.length === 1) {
 
 ```typescript
 it("routes single-file + summarize verb with no explicit name → SUMMARIZE_FILE", () => {
-  const files = [{ id: "f1", name: "service.ts", chunkCount: 12 }];
-  const plan = agent.classify("summarize this", files, []);
-  expect(plan.strategy).toBe("SUMMARIZE_FILE");
-  expect(plan.filePlans[0].fileId).toBe("f1");
+	const files = [{ id: "f1", name: "service.ts", chunkCount: 12 }];
+	const plan = agent.classify("summarize this", files, []);
+	expect(plan.strategy).toBe("SUMMARIZE_FILE");
+	expect(plan.filePlans[0].fileId).toBe("f1");
 });
 
 it("does NOT route to SUMMARIZE_FILE when multi-file + no explicit name", () => {
-  const files = [
-    { id: "f1", name: "a.ts", chunkCount: 8 },
-    { id: "f2", name: "b.ts", chunkCount: 8 },
-  ];
-  const plan = agent.classify("summarize this", files, []);
-  expect(plan.strategy).toBe("SUMMARIZE_ALL");
+	const files = [
+		{ id: "f1", name: "a.ts", chunkCount: 8 },
+		{ id: "f2", name: "b.ts", chunkCount: 8 },
+	];
+	const plan = agent.classify("summarize this", files, []);
+	expect(plan.strategy).toBe("SUMMARIZE_ALL");
 });
 ```
 
@@ -137,12 +141,14 @@ In `+server.ts`, just before `ragAgent.run()`, inspect `mergedFiles` for unready
 
 **Case 1 — Query references a specific file that isn't ready:**
 Skip RAG entirely and prepend a targeted note to the user message so the LLM can explain:
+
 ```
 Note: "[filename]" is still being processed (embedding in progress). Please wait a moment and try again.
 ```
 
 **Case 2 — Some files not ready but query is general:**
 Run RAG normally (ready files will be searched) but prepend a softer warning:
+
 ```
 Note: Some uploaded files are still being processed and may not appear in search results yet.
 ```
@@ -152,15 +158,15 @@ Note: Some uploaded files are still being processed and may not appear in search
 ```typescript
 const notReadyFiles = mergedFiles.filter((f) => !f.finishEmbedding);
 if (notReadyFiles.length > 0) {
-  const referencedNotReady = notReadyFiles.find((f) =>
-    userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
-  );
-  const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
-  if (referencedNotReady && lastMsg?.from === "user") {
-    lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
-  } else if (lastMsg?.from === "user") {
-    lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
-  }
+	const referencedNotReady = notReadyFiles.find((f) =>
+		userQuery.toLowerCase().includes(f.name.toLowerCase().split(".")[0])
+	);
+	const lastMsg = messagesForPrompt[messagesForPrompt.length - 1];
+	if (referencedNotReady && lastMsg?.from === "user") {
+		lastMsg.content = `Note: "${referencedNotReady.name}" is still being processed (embedding in progress). Please wait a moment and try again.\n\n---\n\n${lastMsg.content}`;
+	} else if (lastMsg?.from === "user") {
+		lastMsg.content = `Note: Some uploaded files are still being processed and may not appear in search results yet.\n\n---\n\n${lastMsg.content}`;
+	}
 }
 ```
 
@@ -173,6 +179,7 @@ if (notReadyFiles.length > 0) {
 ### Problem A: `unknown` return types in server RAG client
 
 `src/lib/server/rag/client.ts`:
+
 - `listFiles()` returns `Promise<unknown[]>` — should be `Promise<RagFileMetadata[]>`
 - `getFileChunks()` returns `Promise<unknown>` — should be `Promise<SemanticSearchResponse>`
 - `deleteFile()` returns `Promise<unknown>` — should be `Promise<void>` (callers don't use the body)
@@ -192,6 +199,7 @@ async deleteFile(fileId: string): Promise<void> { ... }
 ### Problem B: `RAG_BASE_URL` duplicated in 5 proxy routes
 
 Each of the 5 proxy routes has:
+
 ```typescript
 const RAG_BASE_URL = process.env.RAG_BASE_URL || "http://localhost:8000";
 // or
@@ -199,11 +207,13 @@ const RAG_BASE_URL = env.RAG_BASE_URL || "http://localhost:8000";
 ```
 
 `RAG_BASE_URL` is already exported from `src/lib/server/rag/client.ts`. Replace inline declarations with:
+
 ```typescript
 import { RAG_BASE_URL } from "$lib/server/rag/client";
 ```
 
 **Files:**
+
 - `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts`
 - `src/routes/api/v1/rag/file/[id]/+server.ts`
 - `src/routes/api/v1/rag/file/[id]/chunks/+server.ts`
@@ -214,18 +224,18 @@ import { RAG_BASE_URL } from "$lib/server/rag/client";
 
 ## Summary of Files Changed
 
-| File | Change |
-|---|---|
-| `src/lib/server/rag/ragAgent.ts` | Add `withTimeout`, timeout constants, wire `inferActiveFile` |
-| `src/lib/server/rag/ragAgent.spec.ts` | Add 2 new classifier tests |
-| `src/lib/server/rag/queryRewriter.ts` | **Delete** |
-| `src/lib/server/rag/client.ts` | Fix `listFiles`, `getFileChunks`, `deleteFile` return types |
-| `src/routes/conversation/[id]/+server.ts` | Add embedding-ready guard |
-| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Import shared `RAG_BASE_URL` |
-| `src/routes/api/v1/rag/file/[id]/+server.ts` | Import shared `RAG_BASE_URL` |
-| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts` | Import shared `RAG_BASE_URL` |
-| `src/routes/api/v1/rag/file/upload/+server.ts` | Import shared `RAG_BASE_URL` |
-| `src/routes/api/v1/rag/files/+server.ts` | Import shared `RAG_BASE_URL` |
+| File                                                           | Change                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------ |
+| `src/lib/server/rag/ragAgent.ts`                               | Add `withTimeout`, timeout constants, wire `inferActiveFile` |
+| `src/lib/server/rag/ragAgent.spec.ts`                          | Add 2 new classifier tests                                   |
+| `src/lib/server/rag/queryRewriter.ts`                          | **Delete**                                                   |
+| `src/lib/server/rag/client.ts`                                 | Fix `listFiles`, `getFileChunks`, `deleteFile` return types  |
+| `src/routes/conversation/[id]/+server.ts`                      | Add embedding-ready guard                                    |
+| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Import shared `RAG_BASE_URL`                                 |
+| `src/routes/api/v1/rag/file/[id]/+server.ts`                   | Import shared `RAG_BASE_URL`                                 |
+| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts`            | Import shared `RAG_BASE_URL`                                 |
+| `src/routes/api/v1/rag/file/upload/+server.ts`                 | Import shared `RAG_BASE_URL`                                 |
+| `src/routes/api/v1/rag/files/+server.ts`                       | Import shared `RAG_BASE_URL`                                 |
 
 **Total:** 10 files (1 deleted, 9 modified)
 

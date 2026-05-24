@@ -72,6 +72,7 @@ The RAG system enables the chat interface to contextually retrieve and reference
 **Date:** March 2, 2026
 
 **Key Changes:**
+
 - **JWT Authentication Flow:** Integrated RAG JWT authentication with Google SSO login process
 - **Session Storage:** Store RAG JWT tokens server-side in user sessions (never exposed to client)
 - **Token Type Fix:** Switched from Google access tokens to Google ID tokens for RAG backend authentication
@@ -80,12 +81,14 @@ The RAG system enables the chat interface to contextually retrieve and reference
 - **Error Handling:** RAG authentication failures are logged but don't break the login process
 
 **Architecture Changes:**
+
 - **Frontend:** `browserRagClient` uses `/api/v1/rag` proxy routes exclusively
 - **Backend:** Proxy routes call RAG backend directly with JWT `Authorization: Bearer <token>` headers
 - **Authentication:** Google ID token → RAG JWT → Secure session storage
 - **Security:** JWT tokens stored server-side only, automatic refresh ready
 
 **Files Modified:**
+
 - `src/lib/types/Session.ts` - Added `ragToken`, `ragRefreshToken`, `ragTokenExpiresAt`, `oauth.idToken`
 - `src/lib/server/rag/auth.ts` - Created JWT authentication utilities
 - `src/lib/rag/browserClient.ts` - Fixed baseUrl configuration
@@ -94,6 +97,7 @@ The RAG system enables the chat interface to contextually retrieve and reference
 - `src/lib/server/auth.ts` - Added ID token storage
 
 **Verification:**
+
 - ✅ Google SSO login automatically authenticates with RAG backend
 - ✅ Existing sessions get fallback JWT authentication
 - ✅ All RAG operations (list, upload, delete, search) work with JWT
@@ -145,6 +149,7 @@ The RAG system supports indexing for standard text formats and common developer 
 ## ✅ RAG Features Verification (March 2, 2026)
 
 ### Core RAG Operations
+
 - ✅ **File Listing:** Users can view their uploaded RAG files via RagFileManager
 - ✅ **File Upload:** Files can be uploaded through the UI with automatic processing
 - ✅ **File Deletion:** Users can delete their RAG files through the interface
@@ -152,6 +157,7 @@ The RAG system supports indexing for standard text formats and common developer 
 - ✅ **File Chunks:** Individual file chunks can be retrieved and displayed
 
 ### Authentication & Security
+
 - ✅ **JWT Authentication:** All RAG requests use secure JWT Bearer tokens
 - ✅ **Google SSO Integration:** Automatic RAG authentication during login
 - ✅ **Session Security:** JWT tokens stored server-side only
@@ -159,6 +165,7 @@ The RAG system supports indexing for standard text formats and common developer 
 - ✅ **Error Handling:** RAG failures don't break login flow
 
 ### User Interface
+
 - ✅ **RagFileManager:** Complete file management interface
 - ✅ **RagReferenceCard:** Interactive citation display in chat
 - ✅ **MessageRenderer:** Proper routing of RAG-enhanced messages
@@ -166,6 +173,7 @@ The RAG system supports indexing for standard text formats and common developer 
 - ✅ **File-Aware Queries:** Query rewriter understands file references
 
 ### Backend Integration
+
 - ✅ **SvelteKit Proxies:** All RAG operations go through secure proxy routes
 - ✅ **Tenant Isolation:** Users only access their own files
 - ✅ **Query Rewriting:** Multi-turn conversation context enhancement
@@ -173,6 +181,7 @@ The RAG system supports indexing for standard text formats and common developer 
 - ✅ **Error Recovery:** Graceful handling of backend failures
 
 ### Performance & Reliability
+
 - ✅ **Frontend Caching:** File lists cached to reduce API calls
 - ✅ **Automatic Polling:** File processing status updates
 - ✅ **Concurrent Safety:** Multiple simultaneous operations supported
@@ -197,6 +206,7 @@ Beyond the current phases, we plan to implement:
 **Previous:** Every request to the RAG backend included an `X-User-ID` header for tenant isolation.
 
 **Current:** All RAG requests use JWT Bearer token authentication for enhanced security:
+
 - **Frontend:** Uses `browserRagClient` with `/api/v1/rag` proxy routes
 - **Proxy Routes:** Authenticate users, retrieve JWT from session, call RAG backend with `Authorization: Bearer <jwt>`
 - **Session Storage:** JWT tokens stored server-side only, never exposed to client
@@ -214,6 +224,7 @@ By moving rendering logic out of `ChatMessage.svelte`, we preserved the complex 
 ### 4. SvelteKit Proxy Architecture
 
 All RAG operations go through SvelteKit proxy routes for security:
+
 - **Authentication:** Block anonymous access, require authenticated user
 - **Token Management:** Retrieve JWT from session, handle fallback authentication
 - **Error Handling:** Graceful handling of RAG backend failures
@@ -222,6 +233,7 @@ All RAG operations go through SvelteKit proxy routes for security:
 ### 5. Agentic Orchestration & Fallback Planning
 
 The RAG system now uses a two-tier planning architecture:
+
 - **Tier 1 (LLM Planner):** Tries to use the local Ollama model to reason about complex multi-file queries.
 - **Tier 2 (Regex Fallback):** If Tier 1 fails, times out (2s), or returns invalid JSON, the system instantly reverts to a legacy deterministic planner.
 - **Hard Limits:** All plans are subject to code-enforced limits (max 3 `DEEP_DIVE` files, 5 files total) to prevent latency/memory spikes.
@@ -230,25 +242,25 @@ The RAG system now uses a two-tier planning architecture:
 
 ## 📂 File Reference
 
-| File Path                                         | Description                           | Phase |
-| ------------------------------------------------- | ------------------------------------- | ----- |
-| `src/lib/rag/client.ts`                           | Centralized API client                 | 3     |
-| `src/lib/rag/browserClient.ts`                    | Browser-safe proxy client              | 3     |
-| `src/lib/rag/context.ts`                          | Shared RAG types                      | 4     |
-| `src/lib/server/rag/ragAgent.ts`              | Main Orchestrator (Plan + Execute)    | 7     |
-| `src/lib/server/rag/ragPlanner.ts`            | LLM-based Strategy Planner            | 7     |
-| `src/lib/server/rag/ragAgentLegacy.ts`        | Deterministic Regex Fallback Planner  | 7     |
-| `src/lib/server/rag/historyCompressor.ts`     | Zero-latency Context Compressor       | 7     |
-| `src/lib/server/rag/contextBuilder.ts`        | Prompt formatter (4k/8k scaling)      | 1, 4, 7 |
-| `src/lib/server/rag/queryRewriter.ts`         | Query transformation logic            | 2     |
-| `src/lib/server/rag/auth.ts`                  | JWT authentication utilities           | 6     |
-| `src/lib/components/chat/MessageRenderer.svelte`  | UI Routing layer                      | 4     |
-| `src/lib/components/chat/RagReferenceCard.svelte` | Citation UI Card                      | 4     |
-| `src/routes/api/v1/rag/files/+server.ts`          | File listing proxy (JWT auth)         | 3, 6  |
-| `src/routes/api/v1/rag/file/upload/+server.ts`    | File upload proxy (JWT auth)           | 3, 6  |
-| `src/routes/api/v1/rag/file/[id]/+server.ts`      | File deletion proxy (JWT auth)        | 3, 6  |
-| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Semantic search proxy (JWT auth) | 3, 6  |
-| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts` | File chunks proxy (JWT auth)          | 3, 6  |
-| `src/routes/conversation/[id]/+server.ts`         | Core Chat-RAG integration              | 1, 7  |
-| `src/routes/login/callback/updateUser.ts`        | Google SSO + RAG JWT integration       | 6     |
-| `src/lib/types/Session.ts`                        | Session interface with JWT fields     | 6     |
+| File Path                                                      | Description                          | Phase   |
+| -------------------------------------------------------------- | ------------------------------------ | ------- |
+| `src/lib/rag/client.ts`                                        | Centralized API client               | 3       |
+| `src/lib/rag/browserClient.ts`                                 | Browser-safe proxy client            | 3       |
+| `src/lib/rag/context.ts`                                       | Shared RAG types                     | 4       |
+| `src/lib/server/rag/ragAgent.ts`                               | Main Orchestrator (Plan + Execute)   | 7       |
+| `src/lib/server/rag/ragPlanner.ts`                             | LLM-based Strategy Planner           | 7       |
+| `src/lib/server/rag/ragAgentLegacy.ts`                         | Deterministic Regex Fallback Planner | 7       |
+| `src/lib/server/rag/historyCompressor.ts`                      | Zero-latency Context Compressor      | 7       |
+| `src/lib/server/rag/contextBuilder.ts`                         | Prompt formatter (4k/8k scaling)     | 1, 4, 7 |
+| `src/lib/server/rag/queryRewriter.ts`                          | Query transformation logic           | 2       |
+| `src/lib/server/rag/auth.ts`                                   | JWT authentication utilities         | 6       |
+| `src/lib/components/chat/MessageRenderer.svelte`               | UI Routing layer                     | 4       |
+| `src/lib/components/chat/RagReferenceCard.svelte`              | Citation UI Card                     | 4       |
+| `src/routes/api/v1/rag/files/+server.ts`                       | File listing proxy (JWT auth)        | 3, 6    |
+| `src/routes/api/v1/rag/file/upload/+server.ts`                 | File upload proxy (JWT auth)         | 3, 6    |
+| `src/routes/api/v1/rag/file/[id]/+server.ts`                   | File deletion proxy (JWT auth)       | 3, 6    |
+| `src/routes/api/v1/rag/chunk/semanticSearchForChat/+server.ts` | Semantic search proxy (JWT auth)     | 3, 6    |
+| `src/routes/api/v1/rag/file/[id]/chunks/+server.ts`            | File chunks proxy (JWT auth)         | 3, 6    |
+| `src/routes/conversation/[id]/+server.ts`                      | Core Chat-RAG integration            | 1, 7    |
+| `src/routes/login/callback/updateUser.ts`                      | Google SSO + RAG JWT integration     | 6       |
+| `src/lib/types/Session.ts`                                     | Session interface with JWT fields    | 6       |

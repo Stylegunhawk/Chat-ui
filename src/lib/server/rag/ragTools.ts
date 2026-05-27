@@ -105,7 +105,7 @@ export const GET_CODE_GRAPH_RELATED_TOOL: OpenAiTool = {
 				entity: {
 					type: "string",
 					description:
-						"Class or function name (e.g. 'CacheStore') or fully-qualified ID (tenant::file::name).",
+						"Symbol name to look up — a class, function, or method identifier as it appears in the user's code (e.g. 'CacheStore', 'render_view'). Resolve from conversation history if the user refers to it as 'it' or 'that function'. Maximum 256 characters.",
 				},
 				depth: {
 					type: "integer",
@@ -308,6 +308,22 @@ export const handleGetCodeGraphRelated = async (
 	ctx: { ragClient: RAGClient }
 ): Promise<CodeGraphRelatedResult> => {
 	const { entity, depth = 2, max = 10, include_snippets = false } = args;
+
+	// Validate entity before it becomes a URL query param. Unicode-aware so
+	// non-ASCII identifiers (Python 3, Java, CJK class names) are accepted; the
+	// goal is to reject oversized / whitespace / metacharacter injection payloads.
+	const ENTITY_MAX_LEN = 256;
+	const ENTITY_PATTERN = /^[\p{L}\p{N}_.<>:\-]+$/u;
+	if (typeof entity !== "string" || entity.length === 0) {
+		return { error: "entity is required" };
+	}
+	if (entity.length > ENTITY_MAX_LEN) {
+		return { error: `entity exceeds maximum length of ${ENTITY_MAX_LEN} characters` };
+	}
+	if (!ENTITY_PATTERN.test(entity)) {
+		return { error: "entity contains invalid characters; allowed: letters, digits, _ . < > : -" };
+	}
+
 	const clampedDepth = Math.min(Math.max(depth, 1), 3);
 	const clampedMax = Math.min(Math.max(max, 1), 20);
 

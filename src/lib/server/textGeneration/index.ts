@@ -72,11 +72,13 @@ async function* textGenerationWithoutTitle(
 				ragStep = await ragGen.next();
 			}
 			const ragResult = ragStep.value;
-			if (ragResult === "completed" || ragResult === "aborted") {
+			if (ragResult === "completed" || ragResult === "aborted" || ragResult === "exhausted") {
+				// "exhausted" already streamed a final answer — do NOT fall through,
+				// otherwise the user would receive a second answer from plain gen.
 				done.abort();
 				return;
 			}
-			// "not_applicable" → model doesn't support tools → fall through to MCP / plain gen
+			// "not_applicable" → RAG not engaged / model lacks tool support → fall through to MCP / plain gen
 		}
 
 		// ── 2. MCP tool loop (pure MCP — no RAG tools) ───────────────────────

@@ -16,6 +16,7 @@
 	import BlockWrapper from "./BlockWrapper.svelte";
 	import { getToolRenderer } from "./tools/registry";
 	import ToolConfirmCard from "./ToolConfirmCard.svelte";
+	import GraphChip from "./tools/GraphChip.svelte";
 
 	interface Props {
 		tool: MessageToolUpdate[];
@@ -204,6 +205,16 @@
 				/>
 			</button>
 		</div>
+
+		<!-- Always-visible graph pill (independent of the collapse state) -->
+		{#if toolFnName === "get_code_graph_related" && toolSuccess}
+			{@const graphResult = tool.find(isMessageToolResultUpdate)}
+			{#if graphResult}
+				<div class="mt-2">
+					<GraphChip update={graphResult} />
+				</div>
+			{/if}
+		{/if}
 
 		<!-- Expandable content -->
 		{#if isOpen}

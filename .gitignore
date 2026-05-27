@@ -17,3 +17,4 @@ models/*
 !models/add-your-models-here.txt
 .claude/*
 !.claude/skills/
+.audit/

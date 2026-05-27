@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { handleRetrieveDocs, handleGetFileChunks } from "./ragTools";
+import { handleRetrieveDocs, handleGetFileChunks, handleGetCodeGraphRelated } from "./ragTools";
 import type { RAGClient } from "./client";
 import type { ChatFileChunk, RagFileMetadata, SemanticSearchResponse } from "$lib/rag/client";
 
@@ -207,5 +207,51 @@ describe("handleGetFileChunks", () => {
 		);
 		expect(result.error).toMatch(/500/);
 		expect(result.chunks).toEqual([]);
+	});
+});
+
+describe("handleGetCodeGraphRelated entity validation", () => {
+	function graphClient() {
+		return {
+			getGraphRelated: vi.fn(async () => ({ entity: "x", related: [] })),
+		} as unknown as RAGClient;
+	}
+
+	it("rejects an empty entity without calling the backend", async () => {
+		const ragClient = graphClient();
+		const result = await handleGetCodeGraphRelated({ entity: "" }, { ragClient });
+		expect(result.error).toMatch(/required/);
+		expect(ragClient.getGraphRelated).not.toHaveBeenCalled();
+	});
+
+	it("rejects an over-length entity", async () => {
+		const ragClient = graphClient();
+		const result = await handleGetCodeGraphRelated({ entity: "a".repeat(300) }, { ragClient });
+		expect(result.error).toMatch(/maximum length/);
+		expect(ragClient.getGraphRelated).not.toHaveBeenCalled();
+	});
+
+	it("rejects entities with whitespace or metacharacters", async () => {
+		const ragClient = graphClient();
+		for (const bad of ["drop table", "a;b", "a b", "a/b"]) {
+			const result = await handleGetCodeGraphRelated({ entity: bad }, { ragClient });
+			expect(result.error).toMatch(/invalid characters/);
+		}
+		expect(ragClient.getGraphRelated).not.toHaveBeenCalled();
+	});
+
+	it("accepts a generic identifier and calls the backend", async () => {
+		const ragClient = graphClient();
+		const result = await handleGetCodeGraphRelated({ entity: "MyClass<T>" }, { ragClient });
+		expect(result.error).toBeUndefined();
+		expect(ragClient.getGraphRelated).toHaveBeenCalledWith("MyClass<T>", 2, 10, false);
+	});
+
+	it("accepts Unicode identifiers (non-ASCII codebases)", async () => {
+		const ragClient = graphClient();
+		for (const ok of ["café", "Москва", "クラス名"]) {
+			const result = await handleGetCodeGraphRelated({ entity: ok }, { ragClient });
+			expect(result.error).toBeUndefined();
+		}
 	});
 });

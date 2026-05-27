@@ -127,9 +127,9 @@
 		<!-- Content -->
 		<div class="min-h-0 flex-1 overflow-hidden">
 			{#if viewMode === "code"}
-				<div class="scrollbar-custom h-full overflow-auto bg-gray-950 p-4">
+				<div class="scrollbar-custom h-full overflow-auto bg-gray-50 p-4 dark:bg-gray-950">
 					<pre
-						class="whitespace-pre font-mono text-xs leading-relaxed text-gray-200">{artifact.content}</pre>
+						class="whitespace-pre font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200">{artifact.content}</pre>
 				</div>
 			{:else if artifact.type === "text/html" || artifact.type === "image/svg+xml"}
 				<ArtifactSandbox content={artifact.content} onerror={handleSandboxError} />

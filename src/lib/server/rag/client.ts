@@ -6,6 +6,7 @@
  */
 
 import type { ChatFileChunk, SemanticSearchResponse, RagFileMetadata } from "$lib/rag/client";
+import { logger } from "$lib/server/logger";
 
 const RAG_BASE_URL = process.env.RAG_BASE_URL || "http://localhost:8000";
 
@@ -61,6 +62,11 @@ export class RAGClient {
 
 		let jwt = await getRAGTokenFromSession(this.sessionId);
 
+		// Track why we ended up without a token so the terminal error names the root
+		// cause (refresh failure vs. missing credentials) instead of collapsing both
+		// into a generic "no token" message.
+		let refreshFailed = false;
+
 		// Check if token is expired and needs refresh
 		if (jwt) {
 			const { collections } = await import("$lib/server/database");
@@ -74,7 +80,11 @@ export class RAGClient {
 						await storeRAGTokenInSession(this.sessionId, newAuth);
 						jwt = newAuth.access_token;
 					} catch (refreshError) {
-						console.error("[RAG] JWT refresh failed:", refreshError);
+						logger.warn(
+							{ sessionId: this.sessionId, err: refreshError },
+							"[RAG] JWT refresh failed — falling back to id-token authentication"
+						);
+						refreshFailed = true;
 						// Fall through to fallback authentication
 						jwt = null;
 					}
@@ -99,13 +109,20 @@ export class RAGClient {
 					await storeRAGTokenInSession(this.sessionId, ragAuth);
 					jwt = ragAuth.access_token;
 				} catch (e) {
-					console.error("[RAG] Fallback authentication failed:", e);
+					logger.error(
+						{ sessionId: this.sessionId, err: e },
+						"[RAG] Fallback id-token authentication failed"
+					);
 				}
 			}
 		}
 
 		if (!jwt) {
-			throw new Error("No RAG authentication token found. Please log in again.");
+			throw new Error(
+				refreshFailed
+					? "RAG token refresh failed and fallback authentication did not succeed. Please log in again."
+					: "No RAG authentication token found. Please log in again."
+			);
 		}
 
 		return jwt;

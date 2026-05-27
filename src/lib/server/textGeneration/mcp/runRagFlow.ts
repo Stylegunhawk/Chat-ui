@@ -3,7 +3,9 @@
  *
  * Independent of MCP servers. Advertises list_files, retrieve_docs, get_file_chunks, and get_code_graph_related.
  * All RAG backend calls go through RAGClient directly — no MCP server discovery,
- * no URL safety checks, no HF token forwarding, no router resolution.
+ * no router resolution. The outbound OpenAI completion forwards the user's
+ * `locals.token` as `Authorization: Bearer` ONLY when OPENAI_FORWARD_USER_TOKEN
+ * is "true" AND isValidUrl(OPENAI_BASE_URL) passes (see userTokenHeaders).
  *
  * Returns "not_applicable" when RAG is not engaged so callers can fall through
  * to the MCP flow or plain generation.
@@ -18,7 +20,7 @@ import {
 import { ToolResultStatus } from "$lib/types/Tool";
 import { logger } from "$lib/server/logger";
 import { AbortedGenerations } from "$lib/server/abortedGenerations";
-import { buildToolPreprompt } from "../utils/toolPrompt";
+import { buildRagFlowPrompt } from "../utils/toolPrompt";
 import { prepareMessagesWithFiles } from "$lib/server/textGeneration/utils/prepareFiles";
 import { makeImageProcessor } from "$lib/server/endpoints/images";
 import {
@@ -37,6 +39,7 @@ import {
 import { evaluate, reformulateQuery } from "$lib/server/rag/ragCritic";
 import { buildRagContextMessage } from "$lib/server/rag/contextBuilder";
 import { generateFromDefaultEndpoint } from "$lib/server/generateFromDefaultEndpoint";
+import { userTokenHeaders } from "./forwardUserToken";
 import type { TextGenerationContext } from "../types";
 import type { EndpointMessage } from "../../endpoints/endpoints";
 import type { ChatFileChunk } from "$lib/rag/client";
@@ -50,7 +53,7 @@ import type { Stream } from "openai/streaming";
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-export type RagFlowResult = "completed" | "not_applicable" | "aborted";
+export type RagFlowResult = "completed" | "not_applicable" | "aborted" | "exhausted";
 
 export type RunRagFlowContext = Pick<
 	TextGenerationContext,
@@ -76,6 +79,10 @@ type DispatchEvent =
 const MAX_LOOPS = 10;
 const MAX_CRITIC_RETRIES = 2;
 const CRITIC_TIMEOUT_MS = 1500;
+// Hallucinated-tool handling: how many synthetic error replies to emit per
+// iteration, and after how many consecutive all-unknown iterations to bail out.
+const MAX_UNKNOWN_REPLIES_PER_ITER = 3;
+const MAX_UNKNOWN_STRIKES = 2;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -118,8 +125,20 @@ function graphToMermaid(data: unknown, entity: string): string | null {
 	const related = Array.isArray(g.related) ? g.related : [];
 
 	const safeId = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, "_");
+	// Mermaid escapes special characters in quoted labels via `#`-prefixed entity
+	// codes (it substitutes #code; -> &code; at render time). Without this, names
+	// like `Foo<T>`, `Array[T]`, or paths containing `"` produce invalid syntax.
+	const mermaidEscape = (s: string) =>
+		s
+			.replace(/"/g, "#quot;")
+			.replace(/</g, "#lt;")
+			.replace(/>/g, "#gt;")
+			.replace(/\[/g, "#91;")
+			.replace(/\]/g, "#93;");
 	const nodeLabel = (name: string, file?: string) =>
-		file ? `["${name}\\n${file}"]` : `["${name}"]`;
+		file
+			? `["${mermaidEscape(name)}<br/>${mermaidEscape(file)}"]`
+			: `["${mermaidEscape(name)}"]`;
 
 	const anchorId = safeId(g.anchor?.name ?? entity);
 	const anchorLabel = nodeLabel(g.anchor?.name ?? entity, g.anchor?.file);
@@ -135,7 +154,7 @@ function graphToMermaid(data: unknown, entity: string): string | null {
 			nodeLines.push(`  ${rId}${nodeLabel(r.name, r.file)}`);
 			seen.add(rId);
 		}
-		const edgeLabel = r.relation ? `-->|"${r.relation}"| ` : "--> ";
+		const edgeLabel = r.relation ? `-->|"${mermaidEscape(r.relation)}"| ` : "--> ";
 		edgeLines.push(`  ${anchorId} ${edgeLabel}${rId}`);
 	}
 
@@ -154,10 +173,11 @@ function graphToMermaid(data: unknown, entity: string): string | null {
  * (ToolCall, ETA, Result) for real-time UI, then a final "complete" event with
  * the tool messages to append to the OpenAI conversation history.
  *
- * Includes critic loop for retrieve_docs: if verdict is RETRY and the per-turn
- * retry cap hasn't been reached, reformulates the query via a 1500ms-capped LLM
- * call, retries the backend, merges results (highest-similarity wins per chunk id),
- * and increments ragContext.criticRetriesUsed.
+ * Includes critic loop for retrieve_docs: if verdict is RETRY and the per-call
+ * retry cap (MAX_CRITIC_RETRIES) hasn't been reached, reformulates the query via a
+ * 1500ms-capped LLM call, retries the backend, merges results (highest-similarity
+ * wins per chunk id). The retry budget is scoped per tool call; ragContext.criticRetriesUsed
+ * is still incremented for turn-level telemetry.
  *
  * Never throws — errors become <rag_result error="true"/> so the LLM can explain
  * to the user.
@@ -165,7 +185,9 @@ function graphToMermaid(data: unknown, entity: string): string | null {
 async function* dispatchRagToolCalls(
 	calls: NormalizedCall[],
 	ragContext: NonNullable<TextGenerationContext["ragContext"]>,
-	locals: App.Locals | undefined
+	locals: App.Locals | undefined,
+	log: typeof logger,
+	abortSignal?: AbortSignal
 ): AsyncGenerator<DispatchEvent, void, undefined> {
 	const toolMessages: ChatCompletionMessageParam[] = [];
 	const ragToolCtx = { ragClient: ragContext.ragClient, inventory: ragContext.inventory };
@@ -195,6 +217,10 @@ async function* dispatchRagToolCalls(
 		};
 
 		let output: string;
+		let dispatchError: string | null = null;
+		// Critic-retry budget is scoped per tool call so that a multi-file turn does
+		// not let the first retrieve_docs call exhaust the retries for later calls.
+		let callRetriesUsed = 0;
 		let graphStructured: { mermaid: string; entity: string; nodeCount: number } | null = null;
 		try {
 			graphStructured = null;
@@ -203,7 +229,7 @@ async function* dispatchRagToolCalls(
 				let result = await handleRetrieveDocs(argsObj as unknown as RetrieveDocsArgs, ragToolCtx);
 				let verdict = evaluate(result.chunks ?? []);
 
-				logger.info(
+				log.info(
 					{
 						chunks: result.chunks?.length ?? 0,
 						verdict: verdict.verdict,
@@ -212,9 +238,9 @@ async function* dispatchRagToolCalls(
 					"[rag] retrieve_docs returned"
 				);
 
-				if (verdict.verdict === "RETRY" && ragContext.criticRetriesUsed < MAX_CRITIC_RETRIES) {
-					logger.info(
-						{ retriesUsed: ragContext.criticRetriesUsed },
+				if (verdict.verdict === "RETRY" && callRetriesUsed < MAX_CRITIC_RETRIES) {
+					log.info(
+						{ callRetriesUsed, turnRetriesUsed: ragContext.criticRetriesUsed },
 						"[rag] critic RETRY — reformulating query"
 					);
 
@@ -222,13 +248,20 @@ async function* dispatchRagToolCalls(
 						userQuery: typeof argsObj.query === "string" ? argsObj.query : "",
 						fileNames: ragContext.inventory.map((f) => f.name),
 						maxSim: verdict.signals.maxSimilarity,
-						callLlm: (prompt: string) =>
-							Promise.race([
-								// Drive generateFromDefaultEndpoint to completion and collect streamed text
+						callLlm: (prompt: string) => {
+							// Cancel the underlying LLM stream when the timeout wins the race
+							// or the user aborts — Promise.race alone never cancels the loser,
+							// which would leak the open generation and the timer.
+							const reformulatorController = new AbortController();
+							const onUserAbort = () => reformulatorController.abort();
+							abortSignal?.addEventListener("abort", onUserAbort, { once: true });
+							let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+							return Promise.race([
 								(async () => {
 									const gen = generateFromDefaultEndpoint({
 										messages: [{ from: "user", content: prompt }],
 										locals,
+										abortSignal: reformulatorController.signal,
 									});
 									let streamed = "";
 									let step = await gen.next();
@@ -242,17 +275,21 @@ async function* dispatchRagToolCalls(
 									return final.length > 0 ? final : streamed.trim();
 								})(),
 								// 1500ms safety timeout — on reject, reformulateQuery uses templated fallback
-								new Promise<string>((_, rej) =>
-									setTimeout(
-										() => rej(new Error(`reformulator timeout after ${CRITIC_TIMEOUT_MS}ms`)),
-										CRITIC_TIMEOUT_MS
-									)
-								),
-							]),
+								new Promise<string>((_, rej) => {
+									timeoutHandle = setTimeout(() => {
+										reformulatorController.abort();
+										rej(new Error(`reformulator timeout after ${CRITIC_TIMEOUT_MS}ms`));
+									}, CRITIC_TIMEOUT_MS);
+								}),
+							]).finally(() => {
+								if (timeoutHandle) clearTimeout(timeoutHandle);
+								abortSignal?.removeEventListener("abort", onUserAbort);
+							});
+						},
 					});
 
 					if (rewritten.trim()) {
-						logger.info({ query: rewritten.trim() }, "[rag] retry with reformulated query");
+						log.info({ query: rewritten.trim() }, "[rag] retry with reformulated query");
 						const retryResult = await handleRetrieveDocs(
 							{
 								...(argsObj as unknown as RetrieveDocsArgs),
@@ -266,8 +303,9 @@ async function* dispatchRagToolCalls(
 							error: result.error ?? retryResult.error,
 						};
 						verdict = evaluate(result.chunks ?? []);
+						callRetriesUsed++;
 						ragContext.criticRetriesUsed++;
-						logger.info(
+						log.info(
 							{ chunks: result.chunks?.length ?? 0, verdict: verdict.verdict },
 							"[rag] after retry"
 						);
@@ -281,6 +319,7 @@ async function* dispatchRagToolCalls(
 					const body = buildRagContextMessage(chunks).content;
 					output = `<rag_result tool="retrieve_docs" verdict="${escapeXmlAttr(verdict.verdict)}">${body}</rag_result>`;
 				} else if (result.error) {
+					dispatchError = result.error;
 					output = `<rag_result tool="retrieve_docs" error="true" message="${escapeXmlAttr(result.error)}"/>`;
 				} else {
 					output = `<rag_result tool="retrieve_docs" empty="true"/>`;
@@ -288,7 +327,7 @@ async function* dispatchRagToolCalls(
 			} else if (call.name === "list_files") {
 				// ── list_files: inventory read — no backend call needed ────────
 				const files = ragContext.inventory;
-				logger.info({ count: files.length }, "[rag] list_files returning inventory");
+				log.info({ count: files.length }, "[rag] list_files returning inventory");
 				if (files.length === 0) {
 					output = `<files_list empty="true"/>`;
 				} else {
@@ -307,7 +346,7 @@ async function* dispatchRagToolCalls(
 					ragToolCtx
 				);
 				const graphArgs = argsObj as unknown as CodeGraphRelatedArgs;
-				logger.info(
+				log.info(
 					{ entity: graphArgs.entity, error: result.error ?? "none" },
 					"[rag] get_code_graph_related returned"
 				);
@@ -325,6 +364,7 @@ async function* dispatchRagToolCalls(
 					}
 					output = `<graph_result tool="get_code_graph_related" entity="${escapeXmlAttr(graphArgs.entity)}">\n${JSON.stringify(result.data, null, 2)}\n</graph_result>`;
 				} else {
+					dispatchError = result.error ?? "unknown error";
 					output = `<graph_result tool="get_code_graph_related" error="true" message="${escapeXmlAttr(result.error ?? "unknown error")}"/>`;
 				}
 			} else {
@@ -338,7 +378,7 @@ async function* dispatchRagToolCalls(
 				const chunks = (result.chunks ?? []).map((c) => ({ ...c, similarity: null as null }));
 				ragContext.chunksAccumulator.push(...chunks);
 
-				logger.info(
+				log.info(
 					{ chunks: chunks.length, error: result.error ?? "none" },
 					"[rag] get_file_chunks returned"
 				);
@@ -347,6 +387,7 @@ async function* dispatchRagToolCalls(
 					const body = buildRagContextMessage(chunks).content;
 					output = `<rag_result tool="get_file_chunks">${body}</rag_result>`;
 				} else if (result.error) {
+					dispatchError = result.error;
 					output = `<rag_result tool="get_file_chunks" error="true" message="${escapeXmlAttr(result.error)}"/>`;
 				} else {
 					output = `<rag_result tool="get_file_chunks" empty="true"/>`;
@@ -354,25 +395,36 @@ async function* dispatchRagToolCalls(
 			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			logger.error({ tool: call.name, error: msg }, "[rag] dispatch error");
+			log.error({ tool: call.name, error: msg }, "[rag] dispatch error");
+			dispatchError = msg;
 			output = `<rag_result tool="${call.name}" error="true" message="${escapeXmlAttr(msg)}"/>`;
 		}
 
+		const resultCall = {
+			name: call.name,
+			parameters: argsObj as Record<string, string | number | boolean>,
+		};
 		yield {
 			type: "update",
 			update: {
 				type: MessageUpdateType.Tool,
 				subtype: MessageToolUpdateType.Result,
 				uuid,
-				result: {
-					status: ToolResultStatus.Success,
-					call: {
-						name: call.name,
-						parameters: argsObj as Record<string, string | number | boolean>,
-					},
-					outputs: [{ text: output, ...(graphStructured ? { structured: graphStructured } : {}) }],
-					display: true,
-				},
+				result: dispatchError
+					? {
+							status: ToolResultStatus.Error,
+							call: resultCall,
+							message: dispatchError,
+							display: true,
+						}
+					: {
+							status: ToolResultStatus.Success,
+							call: resultCall,
+							outputs: [
+								{ text: output, ...(graphStructured ? { structured: graphStructured } : {}) },
+							],
+							display: true,
+						},
 			},
 		};
 
@@ -399,9 +451,12 @@ export async function* runRagFlow({
 	// ── Guards ────────────────────────────────────────────────────────────────
 	if (!ragContext?.engaged) return "not_applicable";
 
+	// Conversation-scoped logger so every line in this flow is correlatable.
+	const log = logger.child({ conv: conv._id.toString() });
+
 	const supportsTools = Boolean(model.supportsTools);
 	if (!supportsTools && !forceTools) {
-		logger.info({ model: model.id ?? model.name }, "[rag] model does not support tools — skipping");
+		log.info({ model: model.id ?? model.name }, "[rag] model does not support tools — skipping");
 		return "not_applicable";
 	}
 
@@ -416,7 +471,7 @@ export async function* runRagFlow({
 		return false;
 	};
 
-	logger.info(
+	log.info(
 		{ model: model.id ?? model.name, files: ragContext.inventory.length },
 		"[rag] runRagFlow start"
 	);
@@ -451,14 +506,9 @@ export async function* runRagFlow({
 		GET_CODE_GRAPH_RELATED_TOOL,
 	];
 	const pieces: string[] = [];
-	const toolPreprompt = buildToolPreprompt(oaTools);
+	const toolPreprompt = buildRagFlowPrompt(oaTools, conv.ragEnabled !== false);
 	if (toolPreprompt.trim()) pieces.push(toolPreprompt);
 	if (preprompt?.trim()) pieces.push(preprompt);
-	if (conv.ragEnabled === false) {
-		pieces.push(
-			"Note: Document search (RAG) is currently disabled. Do not call retrieve_docs or get_file_chunks. Work with conversation context only."
-		);
-	}
 	const mergedPreprompt = pieces.join("\n\n");
 
 	let messagesOpenAI: ChatCompletionMessageParam[] = await prepareMessagesWithFiles(
@@ -514,9 +564,14 @@ export async function* runRagFlow({
 	let lastAssistantContent = "";
 	let streamedContent = false;
 	let thinkOpen = false;
+	let unknownToolStrikes = 0;
+	// Per-turn record of dispatched (tool, args) pairs so the model cannot spin on
+	// the same call repeatedly — server-side backstop to the prompt's anti-loop rule.
+	const seenCalls = new Set<string>();
+	const callKey = (c: NormalizedCall) => `${c.name}::${c.arguments.trim()}`;
 
 	for (let loop = 0; loop < MAX_LOOPS; loop++) {
-		logger.info({ loop }, "[rag] loop starting");
+		log.info({ loop }, "[rag] loop starting");
 		if (checkAborted()) return "aborted";
 
 		lastAssistantContent = "";
@@ -530,7 +585,7 @@ export async function* runRagFlow({
 				headers: {
 					"ChatUI-Conversation-ID": conv._id.toString(),
 					"X-use-cache": "false",
-					...(locals?.token ? { Authorization: `Bearer ${locals.token}` } : {}),
+					...userTokenHeaders(locals),
 				},
 			}
 		);
@@ -579,7 +634,7 @@ export async function* runRagFlow({
 			if (checkAborted()) return "aborted";
 		}
 
-		logger.info(
+		log.info(
 			{ loop, toolCalls: Object.keys(toolCallState).length },
 			"[rag] completion stream closed"
 		);
@@ -591,7 +646,7 @@ export async function* runRagFlow({
 			let calls: NormalizedCall[];
 
 			if (missingId) {
-				logger.debug({ loop }, "[rag] missing tool_call id — retrying non-stream to recover");
+				log.debug({ loop }, "[rag] missing tool_call id — retrying non-stream to recover");
 				const nonStream = await openai.chat.completions.create(
 					{ ...completionBase, messages: messagesOpenAI, stream: false },
 					{ signal: abortSignal }
@@ -609,11 +664,30 @@ export async function* runRagFlow({
 					.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }));
 			}
 
-			// Only dispatch known RAG tools — unknown names are silently skipped
-			// (the LLM may occasionally hallucinate tool names)
-			calls = calls.filter((c) => RAG_TOOL_NAMES.has(c.name));
-			logger.info({ tools: calls.map((c) => c.name), loop }, "[rag] LLM called tools");
+			const unknownCalls = calls.filter((c) => !RAG_TOOL_NAMES.has(c.name));
+			const knownCalls = calls.filter((c) => RAG_TOOL_NAMES.has(c.name));
+			// Split known calls into fresh vs. already-seen (same tool + same args this
+			// turn). Fresh calls dispatch; duplicates get a DUPLICATE_CALL reply.
+			const freshCalls = knownCalls.filter((c) => !seenCalls.has(callKey(c)));
+			const dupCalls = knownCalls.filter((c) => seenCalls.has(callKey(c)));
+			for (const c of freshCalls) seenCalls.add(callKey(c));
+			log.info(
+				{
+					fresh: freshCalls.map((c) => c.name),
+					duplicate: dupCalls.map((c) => c.name),
+					unknown: unknownCalls.map((c) => c.name),
+					loop,
+				},
+				"[rag] LLM called tools"
+			);
 
+			// Count iterations that dispatched nothing fresh (all unknown and/or all
+			// duplicate) so we can bail out instead of burning the whole loop budget.
+			if (freshCalls.length === 0 && calls.length > 0) unknownToolStrikes++;
+			else unknownToolStrikes = 0;
+
+			// The assistant message must carry ALL tool_calls so that every tool reply
+			// below has a matching tool_call_id (OpenAI requires one reply per call).
 			const toolCalls: ChatCompletionMessageToolCall[] = calls.map((c) => ({
 				id: c.id,
 				type: "function",
@@ -627,14 +701,61 @@ export async function* runRagFlow({
 				tool_calls: toolCalls,
 			};
 
+			// Synthesize tool replies for hallucinated names and for duplicate calls so
+			// the model can self-correct. Detailed UNKNOWN_TOOL replies are capped per
+			// iteration to bound tokens; the overflow still gets a short reply.
+			const availableTools = [...RAG_TOOL_NAMES].join(", ");
+			const unknownToolMessages: ChatCompletionMessageParam[] = unknownCalls.map((c, i) => ({
+				role: "tool",
+				tool_call_id: c.id,
+				content:
+					i < MAX_UNKNOWN_REPLIES_PER_ITER
+						? `<tool_error code="UNKNOWN_TOOL" name="${escapeXmlAttr(c.name)}">This tool is not available. Available tools: ${availableTools}. Use one of these or answer directly.</tool_error>`
+						: `<tool_error code="UNKNOWN_TOOL" name="${escapeXmlAttr(c.name)}">Not available.</tool_error>`,
+			}));
+			const duplicateToolMessages: ChatCompletionMessageParam[] = dupCalls.map((c) => ({
+				role: "tool",
+				tool_call_id: c.id,
+				content: `<tool_error code="DUPLICATE_CALL" name="${escapeXmlAttr(c.name)}">You already called this tool with the same arguments this turn. Use the earlier result, refine the arguments, or answer directly.</tool_error>`,
+			}));
+
 			let toolMessages: ChatCompletionMessageParam[] = [];
-			for await (const event of dispatchRagToolCalls(calls, ragContext, locals)) {
-				if (event.type === "update") yield event.update;
-				else toolMessages = event.toolMessages;
+			if (freshCalls.length > 0) {
+				for await (const event of dispatchRagToolCalls(
+					freshCalls,
+					ragContext,
+					locals,
+					log,
+					abortSignal
+				)) {
+					if (event.type === "update") yield event.update;
+					else toolMessages = event.toolMessages;
+				}
 			}
 
-			messagesOpenAI = [...messagesOpenAI, assistantMsg, ...toolMessages];
+			messagesOpenAI = [
+				...messagesOpenAI,
+				assistantMsg,
+				...unknownToolMessages,
+				...duplicateToolMessages,
+				...toolMessages,
+			];
 			if (checkAborted()) return "aborted";
+
+			// Stuck calling no fresh tools across iterations → finalize gracefully
+			// rather than looping to exhaustion (which would otherwise double-answer).
+			if (unknownToolStrikes >= MAX_UNKNOWN_STRIKES) {
+				log.warn(
+					{ loop, unknownToolStrikes },
+					"[rag] repeated unknown-tool calls — finalizing gracefully"
+				);
+				const stuckMsg =
+					lastAssistantContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, "").trim() ||
+					"I tried to use tools that aren't available here. Could you rephrase, or tell me which file you'd like me to look at?";
+				if (!streamedContent) yield { type: MessageUpdateType.Stream, token: stuckMsg };
+				yield { type: MessageUpdateType.FinalAnswer, text: stuckMsg, interrupted: false };
+				return "completed";
+			}
 			continue;
 		}
 
@@ -651,10 +772,22 @@ export async function* runRagFlow({
 			text: lastAssistantContent,
 			interrupted: false,
 		};
-		logger.info({ loop, chars: lastAssistantContent.length }, "[rag] final answer emitted");
+		log.info({ loop, chars: lastAssistantContent.length }, "[rag] final answer emitted");
 		return "completed";
 	}
 
-	logger.warn({}, "[rag] loop exhausted — returning not_applicable for plain gen fallback");
-	return "not_applicable";
+	// Loop exhausted after streaming tool activity. Returning "not_applicable" here
+	// would make the caller fall through to plain generation and emit a SECOND
+	// answer. Finalize with the best content we have and return a terminal status.
+	log.warn({ maxLoops: MAX_LOOPS }, "[rag] loop exhausted without a final answer");
+	if (thinkOpen) {
+		lastAssistantContent += "</think>";
+		thinkOpen = false;
+	}
+	const exhaustMsg =
+		lastAssistantContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, "").trim() ||
+		"I wasn't able to complete this with the available tools. Could you narrow the question or point me at a specific file?";
+	if (!streamedContent) yield { type: MessageUpdateType.Stream, token: exhaustMsg };
+	yield { type: MessageUpdateType.FinalAnswer, text: exhaustMsg, interrupted: false };
+	return "exhausted";
 }

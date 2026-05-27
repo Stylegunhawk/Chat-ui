@@ -13,6 +13,7 @@ import { config } from "$lib/server/config";
 import { MessageUpdateType, type MessageUpdate } from "$lib/types/MessageUpdate";
 import { getMcpServers } from "$lib/server/mcp/registry";
 import { isValidUrl } from "$lib/server/urlSafety";
+import { userTokenHeaders } from "./forwardUserToken";
 import { resetMcpToolsCache } from "$lib/server/mcp/tools";
 import { getOpenAiToolsForMcp } from "$lib/server/mcp/tools";
 import type {
@@ -22,7 +23,7 @@ import type {
 	ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { Stream } from "openai/streaming";
-import { buildToolPreprompt } from "../utils/toolPrompt";
+import { buildMcpFlowPrompt } from "../utils/toolPrompt";
 import type { EndpointMessage } from "../../endpoints/endpoints";
 import { resolveRouterTarget } from "./routerResolution";
 import { executeToolCalls, type NormalizedToolCall } from "./toolInvocation";
@@ -366,18 +367,13 @@ export async function* runToolFlow({
 			imageProcessor,
 			mmEnabled
 		);
-		const toolPreprompt = buildToolPreprompt(oaTools);
+		const toolPreprompt = buildMcpFlowPrompt(oaTools, conv.ragEnabled !== false);
 		const prepromptPieces: string[] = [];
 		if (toolPreprompt.trim().length > 0) {
 			prepromptPieces.push(toolPreprompt);
 		}
 		if (typeof preprompt === "string" && preprompt.trim().length > 0) {
 			prepromptPieces.push(preprompt);
-		}
-		if (conv.ragEnabled === false) {
-			prepromptPieces.push(
-				"Note: Document search (RAG) is currently disabled. Do not call retrieve_docs. Work with conversation context only."
-			);
 		}
 		const mergedPreprompt = prepromptPieces.join("\n\n");
 		const hasSystemMessage = messagesOpenAI.length > 0 && messagesOpenAI[0]?.role === "system";
@@ -507,7 +503,7 @@ export async function* runToolFlow({
 					headers: {
 						"ChatUI-Conversation-ID": conv._id.toString(),
 						"X-use-cache": "false",
-						...(locals?.token ? { Authorization: `Bearer ${locals.token}` } : {}),
+						...userTokenHeaders(locals),
 					},
 				}
 			);
@@ -661,7 +657,7 @@ export async function* runToolFlow({
 							headers: {
 								"ChatUI-Conversation-ID": conv._id.toString(),
 								"X-use-cache": "false",
-								...(locals?.token ? { Authorization: `Bearer ${locals.token}` } : {}),
+								...userTokenHeaders(locals),
 							},
 						}
 					);

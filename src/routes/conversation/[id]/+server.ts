@@ -320,15 +320,25 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 		// IMPORTANT: shallow copy messages so we don't mutate originals in conv.messages during injection/sanitization
 		messagesForPrompt = buildSubtree(conv, newUserMessageId).map((m) => ({ ...m }));
 
-		// ============================================================================
-		// RAG METADATA — sync inventory and engage agentic tools when enabled
-		// ============================================================================
+	}
+
+	// ============================================================================
+	// RAG METADATA — sync inventory and engage agentic tools when enabled.
+	// Runs for BOTH the normal and retry paths. Previously this lived only in the
+	// non-retry branch, so clicking "Retry" silently answered without RAG.
+	// ============================================================================
+	{
 		const useAgenticRag = process.env.AGENTIC_RAG !== "0"; // default ON
+		// In every branch the last message is the user turn that should drive
+		// retrieval (normal send, user-edit retry, and assistant retry after the
+		// trailing assistant message has been popped from messagesForPrompt).
+		const lastUserMsg = messagesForPrompt[messagesForPrompt.length - 1];
+		const userQuery =
+			lastUserMsg && lastUserMsg.from === "user" ? lastUserMsg.content?.trim() : undefined;
 
 		try {
 			const { RAGClient } = await import("$lib/server/rag/client");
 			const ragClient = new RAGClient(undefined, locals.sessionId);
-			const userQuery = newPrompt?.trim();
 			const tenantId = locals.user?._id ?? locals.sessionId;
 
 			if (tenantId) {
@@ -341,7 +351,10 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					const mergedMap = new Map([...seed, ...backendFiles].map((f) => [f.id, f]));
 					mergedFiles = Array.from(mergedMap.values());
 				} catch (e) {
-					console.warn("[RAG] Failed to sync backend files, using frontend list only.", e);
+					logger.warn(
+						{ conv: conv._id.toString(), err: e },
+						"[RAG] Failed to sync backend files, using frontend list only"
+					);
 					mergedFiles = (availableFiles ||
 						[]) as unknown as import("$lib/rag/client").RagFileMetadata[];
 				}
@@ -359,8 +372,14 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 					}));
 					const engaged = shouldEngage(userQuery, fileContexts);
 
-					console.log(
-						`[RAG] Agentic gate: ${engaged ? "ENGAGED" : "SKIPPED"} (files=${mergedFiles.length})`
+					logger.info(
+						{
+							conv: conv._id.toString(),
+							engaged,
+							files: mergedFiles.length,
+							retry: Boolean(isRetry),
+						},
+						"[RAG] Agentic gate decision"
 					);
 
 					if (engaged) {
@@ -377,13 +396,12 @@ export const POST: RequestHandler = async ({ request, locals, params, getClientA
 				}
 			}
 		} catch (error) {
-			console.error("[RAG] Metadata sync or injection failed:", error);
+			logger.error({ conv: conv._id.toString(), err: error }, "[RAG] Metadata sync or injection failed");
 		}
-
-		// ============================================================================
-		// END RAG INJECTION
-		// ============================================================================
 	}
+	// ============================================================================
+	// END RAG INJECTION
+	// ============================================================================
 
 	// Strip stale RAG blocks from prior user turns while preserving latest message.
 	messagesForPrompt = stripPriorRagBlocks(messagesForPrompt);

@@ -6,6 +6,9 @@
 	import CarbonChevronDown from "~icons/carbon/chevron-down";
 	import CarbonChevronUp from "~icons/carbon/chevron-up";
 	import { slide } from "svelte/transition";
+	import CopyToClipBoardBtn from "../CopyToClipBoardBtn.svelte";
+	import { highlightCode } from "$lib/utils/marked";
+	import DOMPurify from "isomorphic-dompurify";
 
 	interface Props {
 		chunks: ChatFileChunk[];
@@ -30,6 +33,17 @@
 	});
 
 	let openFiles = $state<Set<string>>(new Set());
+	// Per-chunk full-text expansion
+	let openChunks = $state<Set<string>>(new Set());
+	// Search view: sort chunks by relevance (default) vs. original retrieval order
+	let sortByRelevance = $state(true);
+
+	function toggleChunk(id: string) {
+		const next = new Set(openChunks);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		openChunks = next;
+	}
 
 	// De-duplicate by fileId for the header pills
 	const uniqueFiles = $derived([
@@ -42,8 +56,27 @@
 	const dependencyChunks = $derived(chunks.filter((c) => c.role === "dependency"));
 	const supportingChunks = $derived(chunks.filter((c) => c.role === "supporting"));
 
+	// Average relevance across scored chunks — surfaced in the header as a quality signal
+	const scoredChunks = $derived(chunks.filter((c) => typeof c.similarity === "number"));
+	const avgScore = $derived(
+		scoredChunks.length
+			? Math.round(
+					(scoredChunks.reduce((sum, c) => sum + (c.similarity as number), 0) /
+						scoredChunks.length) *
+						100
+				)
+			: null
+	);
+
 	let expanded = $state(false);
 	let activeTab = $state<"entry" | "dependency" | "supporting" | "all">("entry");
+
+	// Only show role tabs when more than one role is actually present — otherwise
+	// "Context (16)" and "All (16)" would be two tabs over the same chunks.
+	const presentRoleCount = $derived(
+		[entryChunks, dependencyChunks, supportingChunks].filter((a) => a.length > 0).length
+	);
+	const showTabs = $derived(!isFileScan && presentRoleCount > 1);
 
 	const activeChunks = $derived(
 		activeTab === "all"
@@ -55,6 +88,20 @@
 					: supportingChunks
 	);
 
+	const baseChunks = $derived(showTabs ? activeChunks : chunks);
+	const displayChunks = $derived(
+		sortByRelevance
+			? [...baseChunks].sort((a, b) => (b.similarity ?? -1) - (a.similarity ?? -1))
+			: baseChunks
+	);
+
+	// Keep the active tab on a non-empty role when tabs are shown
+	$effect(() => {
+		if (showTabs && activeTab !== "all" && tabCount(activeTab) === 0) {
+			activeTab = (["entry", "dependency", "supporting"] as const).find((t) => tabCount(t) > 0) ?? "all";
+		}
+	});
+
 	function scoreStyle(s: number) {
 		if (s >= 0.8) return { bar: "bg-emerald-500", label: "text-emerald-600 dark:text-emerald-400" };
 		if (s >= 0.6) return { bar: "bg-blue-500", label: "text-blue-600 dark:text-blue-400" };
@@ -62,11 +109,52 @@
 		return { bar: "bg-gray-400", label: "text-gray-500 dark:text-gray-400" };
 	}
 
+	const CODE_EXT_LANG: Record<string, string> = {
+		py: "python",
+		js: "javascript",
+		mjs: "javascript",
+		cjs: "javascript",
+		jsx: "javascript",
+		ts: "typescript",
+		tsx: "typescript",
+		go: "go",
+		rs: "rust",
+		java: "java",
+		cs: "csharp",
+		cpp: "cpp",
+		cc: "cpp",
+		cxx: "cpp",
+		hpp: "cpp",
+		h: "cpp",
+		c: "c",
+		json: "json",
+		sh: "bash",
+		bash: "bash",
+		zsh: "bash",
+		sql: "sql",
+		yaml: "yaml",
+		yml: "yaml",
+		css: "css",
+		scss: "scss",
+		html: "xml",
+		xml: "xml",
+		md: "markdown",
+	};
+
+	function fileExt(filename: string) {
+		return filename.split(".").pop()?.toLowerCase() ?? "";
+	}
+	function isCodeFile(filename: string) {
+		return fileExt(filename) in CODE_EXT_LANG;
+	}
+	function extToLang(filename: string) {
+		return CODE_EXT_LANG[fileExt(filename)] ?? "plaintext";
+	}
+
 	function fileIcon(filename: string) {
-		const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+		const ext = fileExt(filename);
 		if (ext === "pdf") return CarbonDocumentPdf;
-		if (["py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "cs", "cpp"].includes(ext))
-			return CarbonCode;
+		if (ext in CODE_EXT_LANG) return CarbonCode;
 		return CarbonDocument;
 	}
 
@@ -101,6 +189,42 @@
 	}
 </script>
 
+{#snippet chunkBody(chunk: ChatFileChunk)}
+	{@const full = chunk.text.trim()}
+	{@const isOpen = openChunks.has(chunk.id)}
+	{@const shown = isOpen ? full : truncate(full, 160)}
+	<div class="mt-1">
+		{#if isCodeFile(chunk.filename)}
+			<pre
+				class="hljs scrollbar-custom overflow-x-auto rounded-md p-2 font-mono text-[10px] leading-relaxed"
+			><code><!-- eslint-disable svelte/no-at-html-tags -->{@html DOMPurify.sanitize(highlightCode(shown, extToLang(chunk.filename)))}</code></pre>
+		{:else}
+			<p
+				class="whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400"
+			>
+				{shown}
+			</p>
+		{/if}
+		<div class="mt-1 flex items-center gap-3">
+			{#if full.length > 160}
+				<button
+					type="button"
+					class="text-[10px] font-medium text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+					onclick={() => toggleChunk(chunk.id)}
+				>
+					{isOpen ? "Show less" : "Show more"}
+				</button>
+			{/if}
+			<CopyToClipBoardBtn
+				value={full}
+				showTooltip={false}
+				classNames="text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+				iconClassNames="size-3"
+			/>
+		</div>
+	</div>
+{/snippet}
+
 <div
 	class="mt-3 overflow-hidden rounded-xl border border-gray-200/80 bg-white/60 shadow-sm backdrop-blur-sm dark:border-gray-700/60 dark:bg-gray-900/40"
 >
@@ -128,10 +252,19 @@
 				</span>
 			{/if}
 
-			<span class="text-xs text-gray-400 dark:text-gray-500">
+			<span class="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
 				{chunks.length} chunk{chunks.length !== 1 ? "s" : ""}
+				{#if avgScore !== null}
+					{@const style = scoreStyle(avgScore / 100)}
+					<span class="text-gray-300 dark:text-gray-600">·</span>
+					<span class="inline-flex items-center gap-1 font-medium {style.label}">
+						<span class="size-1.5 rounded-full {style.bar}"></span>
+						{avgScore}% avg
+					</span>
+				{/if}
 				{#if expansionCount > 0}
-					· <span class="text-blue-400 dark:text-blue-500">{expansionCount} via graph</span>
+					<span class="text-gray-300 dark:text-gray-600">·</span>
+					<span class="text-blue-400 dark:text-blue-500">{expansionCount} via graph</span>
 				{/if}
 			</span>
 		</div>
@@ -192,15 +325,9 @@
 									{#each group.chunks as chunk (chunk.id)}
 										<div class="px-4 py-2">
 											{#if chunk.pageNumber}
-												<span class="mb-1 block text-[10px] text-gray-400"
-													>Line {chunk.pageNumber}</span
-												>
+												<span class="mb-1 block text-[10px] text-gray-400">Line {chunk.pageNumber}</span>
 											{/if}
-											<p
-												class="font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400"
-											>
-												{truncate(chunk.text.trim(), 200)}
-											</p>
+											{@render chunkBody(chunk)}
 										</div>
 									{/each}
 								</div>
@@ -209,28 +336,42 @@
 					{/each}
 				</div>
 			{:else}
-				<!-- Role-tab view for SEARCH results -->
-				<div class="flex border-t border-gray-100 dark:border-gray-800">
-					{#each tabs as tab}
-						{@const count = tabCount(tab)}
-						{#if count > 0 || tab === "all"}
-							<button
-								class="flex-1 border-b-2 px-2 py-1.5 text-[11px] font-medium transition-colors {activeTab ===
-								tab
-									? 'border-gray-700 bg-gray-50 dark:border-gray-300 dark:bg-gray-800/40'
-									: 'border-transparent text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}"
-								onclick={() => (activeTab = tab)}
-							>
-								{tab === "all" ? "All" : roleLabel[tab]}
-								<span class="ml-0.5 opacity-60">({count})</span>
-							</button>
+				<!-- Toolbar: role tabs (when >1 role) + sort toggle -->
+				<div
+					class="flex items-stretch justify-between border-t border-gray-100 dark:border-gray-800"
+				>
+					<div class="flex min-w-0 flex-1">
+						{#if showTabs}
+							{#each tabs as tab}
+								{@const count = tabCount(tab)}
+								{#if count > 0 || tab === "all"}
+									<button
+										class="border-b-2 px-2.5 py-1.5 text-[11px] font-medium transition-colors {activeTab ===
+										tab
+											? 'border-gray-700 bg-gray-50 text-gray-900 dark:border-gray-300 dark:bg-gray-800/40 dark:text-gray-100'
+											: 'border-transparent text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}"
+										onclick={() => (activeTab = tab)}
+									>
+										{tab === "all" ? "All" : roleLabel[tab]}
+										<span class="ml-0.5 opacity-60">({count})</span>
+									</button>
+								{/if}
+							{/each}
 						{/if}
-					{/each}
+					</div>
+					<button
+						class="flex flex-none items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-200"
+						title="Toggle chunk ordering"
+						onclick={() => (sortByRelevance = !sortByRelevance)}
+					>
+						{sortByRelevance ? "By relevance" : "Original order"}
+						<span class="text-[10px]">⇅</span>
+					</button>
 				</div>
 
 				<!-- Chunk rows -->
 				<div class="max-h-72 divide-y divide-gray-100 overflow-y-auto dark:divide-gray-800">
-					{#each activeChunks as chunk (chunk.id)}
+					{#each displayChunks as chunk (chunk.id)}
 						{@const Icon = fileIcon(chunk.filename)}
 						<div class="flex flex-col gap-1.5 px-3 py-2.5">
 							<!-- File name + role badge -->
@@ -248,9 +389,7 @@
 									{/if}
 								</div>
 								<span
-									class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[
-										chunk.role
-									]}"
+									class="flex-none rounded px-1.5 py-0.5 text-[10px] font-medium {roleBadge[chunk.role]}"
 								>
 									{roleLabel[chunk.role]}
 								</span>
@@ -284,12 +423,8 @@
 								<span class="text-[10px] text-gray-400 dark:text-gray-500">graph expanded</span>
 							{/if}
 
-							<!-- Text preview -->
-							<p
-								class="mt-0.5 font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-400"
-							>
-								{truncate(chunk.text.trim(), 160)}
-							</p>
+							<!-- Code / text preview with expand + copy -->
+							{@render chunkBody(chunk)}
 						</div>
 					{/each}
 				</div>

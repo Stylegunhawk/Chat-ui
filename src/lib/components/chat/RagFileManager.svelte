@@ -4,6 +4,8 @@
 	import { page } from "$app/state";
 	import Modal from "../Modal.svelte";
 	import CarbonDocument from "~icons/carbon/document";
+	import CarbonDocumentPdf from "~icons/carbon/document-pdf";
+	import CarbonCode from "~icons/carbon/code";
 	import CarbonUpload from "~icons/carbon/upload";
 	import CarbonTrashCan from "~icons/carbon/trash-can";
 	import CarbonWarningAlt from "~icons/carbon/warning-alt";
@@ -18,12 +20,24 @@
 
 	let { onclose }: Props = $props();
 
+	type DeleteTarget = { kind: "file"; file: RagFileMetadata } | { kind: "all" };
+
 	let files = $state<RagFileMetadata[]>([]);
 	let loading = $state(false);
 	let uploading = $state(false);
 	let deleting = $state(false);
-	let fileToDelete = $state<RagFileMetadata | null>(null);
+	let deleteTarget = $state<DeleteTarget | null>(null);
 	let errorMsg = $state<string | null>(null);
+
+	// Library stats for the summary bar
+	const totalSize = $derived(files.reduce((sum, f) => sum + f.size, 0));
+	const readyCount = $derived(
+		files.filter((f) => f.finishEmbedding && !f.chunkingError && !f.embeddingError).length
+	);
+	const processingCount = $derived(files.filter((f) => !f.finishEmbedding).length);
+	const failedCount = $derived(
+		files.filter((f) => f.finishEmbedding && (f.chunkingError || f.embeddingError)).length
+	);
 	let fileInputEl: HTMLInputElement | undefined = $state();
 	let pollInterval: ReturnType<typeof setInterval> | undefined = undefined;
 
@@ -107,21 +121,52 @@
 		}
 	}
 
-	// Delete file — called after user confirms in the inline dialog
+	// Delete one file or all files — called after the user confirms in the inline dialog.
+	// Updates the list optimistically and reconciles with a SILENT reload so the modal
+	// never swaps in the full-height loading spinner (which makes it jump on each delete).
 	async function confirmDelete() {
-		if (!fileToDelete) return;
+		if (!deleteTarget) return;
 		deleting = true;
 		errorMsg = null;
+		let failedDeletes = 0;
 		try {
-			await ragClient.deleteFile(fileToDelete.id);
-			fileToDelete = null;
-			await loadFiles();
+			if (deleteTarget.kind === "file") {
+				const id = deleteTarget.file.id;
+				await ragClient.deleteFile(id);
+				files = files.filter((f) => f.id !== id); // optimistic removal
+			} else {
+				// No bulk endpoint — delete each file, tolerating partial failures.
+				const targets = files;
+				const results = await Promise.allSettled(targets.map((f) => ragClient.deleteFile(f.id)));
+				const survivors = targets.filter((_, i) => results[i].status === "rejected");
+				failedDeletes = survivors.length;
+				files = survivors; // optimistic: keep only the ones that failed to delete
+			}
+			deleteTarget = null;
+			await loadFiles(true); // silent reconcile — no spinner swap, no layout flicker
+			if (failedDeletes > 0) {
+				errorMsg = `${failedDeletes} file${failedDeletes !== 1 ? "s" : ""} could not be deleted. Try again.`;
+			}
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : "Delete failed";
 			console.error("[RAG] Delete failed:", e);
 		} finally {
 			deleting = false;
 		}
+	}
+
+	// File-type icon by extension
+	function fileIcon(name: string) {
+		const ext = name.split(".").pop()?.toLowerCase() ?? "";
+		if (ext === "pdf") return CarbonDocumentPdf;
+		if (
+			["py", "js", "ts", "tsx", "jsx", "java", "go", "cpp", "c", "rs", "rb", "php", "swift", "kt", "cs"].includes(
+				ext
+			)
+		) {
+			return CarbonCode;
+		}
+		return CarbonDocument;
 	}
 
 	// Format file size
@@ -217,9 +262,44 @@
 
 			<!-- File List -->
 			<div class="flex flex-col gap-2">
-				<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">
-					Uploaded Files ({files.length})
-				</h3>
+				<div class="flex items-center justify-between gap-2">
+					<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">
+						Uploaded Files ({files.length})
+					</h3>
+					{#if files.length > 0 && !loading}
+						<button
+							class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-900/20"
+							onclick={() => (deleteTarget = { kind: "all" })}
+							disabled={deleting}
+						>
+							<CarbonTrashCan class="size-3.5" />
+							Delete all
+						</button>
+					{/if}
+				</div>
+
+				{#if files.length > 0 && !loading}
+					<div
+						class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
+					>
+						<span>{formatSize(totalSize)} total</span>
+						{#if readyCount > 0}
+							<span class="inline-flex items-center gap-1">
+								<span class="size-1.5 rounded-full bg-green-500"></span>{readyCount} ready
+							</span>
+						{/if}
+						{#if processingCount > 0}
+							<span class="inline-flex items-center gap-1">
+								<span class="size-1.5 rounded-full bg-yellow-500"></span>{processingCount} processing
+							</span>
+						{/if}
+						{#if failedCount > 0}
+							<span class="inline-flex items-center gap-1">
+								<span class="size-1.5 rounded-full bg-red-500"></span>{failedCount} failed
+							</span>
+						{/if}
+					</div>
+				{/if}
 
 				{#if loading}
 					<div class="flex items-center justify-center py-12">
@@ -238,14 +318,15 @@
 				{:else}
 					<div class="scrollbar-custom max-h-96 space-y-2 overflow-y-auto">
 						{#each files as file (file.id)}
+							{@const Icon = fileIcon(file.name)}
 							<div
-								class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+								class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600"
 							>
 								<!-- Icon -->
 								<div
 									class="grid size-10 flex-none place-items-center rounded-lg bg-gray-100 dark:bg-gray-700"
 								>
-									<CarbonDocument class="size-5 text-gray-600 dark:text-gray-400" />
+									<Icon class="size-5 text-gray-600 dark:text-gray-400" />
 								</div>
 
 								<!-- File Info -->
@@ -306,11 +387,11 @@
 
 								<!-- Delete Button -->
 								<button
-									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 {fileToDelete?.id ===
-									file.id
+									class="flex-none rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 {deleteTarget?.kind ===
+										'file' && deleteTarget.file.id === file.id
 										? 'text-red-600 dark:text-red-400'
 										: ''}"
-									onclick={() => (fileToDelete = file)}
+									onclick={() => (deleteTarget = { kind: "file", file })}
 									aria-label="Delete file"
 									title="Delete file"
 									disabled={deleting}
@@ -322,8 +403,8 @@
 					</div>
 				{/if}
 			</div>
-			<!-- Delete confirmation panel -->
-			{#if fileToDelete}
+			<!-- Delete confirmation panel (single file or all files) -->
+			{#if deleteTarget}
 				<div
 					transition:slide={{ duration: 180 }}
 					class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800/60 dark:bg-red-900/20"
@@ -331,17 +412,25 @@
 					<div class="flex items-start gap-3">
 						<CarbonWarningAlt class="mt-0.5 size-5 flex-none text-red-500 dark:text-red-400" />
 						<div class="flex-1">
-							<p class="text-sm font-medium text-red-700 dark:text-red-300">Delete file?</p>
+							<p class="text-sm font-medium text-red-700 dark:text-red-300">
+								{deleteTarget.kind === "all" ? "Delete all files?" : "Delete file?"}
+							</p>
 							<p class="mt-0.5 text-xs text-red-600/80 dark:text-red-400/80">
-								<span class="font-medium">{fileToDelete.name}</span> will be permanently removed and
-								cannot be recovered.
+								{#if deleteTarget.kind === "all"}
+									All <span class="font-medium">{files.length}</span> file{files.length !== 1
+										? "s"
+										: ""} will be permanently removed and cannot be recovered.
+								{:else}
+									<span class="font-medium">{deleteTarget.file.name}</span> will be permanently removed
+									and cannot be recovered.
+								{/if}
 							</p>
 						</div>
 					</div>
 					<div class="mt-3 flex justify-end gap-2">
 						<button
 							class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-							onclick={() => (fileToDelete = null)}
+							onclick={() => (deleteTarget = null)}
 							disabled={deleting}
 						>
 							Cancel
@@ -355,7 +444,7 @@
 								<EosIconsLoading class="size-3.5" />
 								Deleting…
 							{:else}
-								Delete
+								{deleteTarget.kind === "all" ? "Delete all" : "Delete"}
 							{/if}
 						</button>
 					</div>
